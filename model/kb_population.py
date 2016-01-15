@@ -65,19 +65,15 @@ class KBPopulation(object):
 
         with vs.variable_scope("fact", initializer=init):
             for j in xrange(max_facts):
-                if j > 0:
-                    vs.get_variable_scope().reuse_variables()
                 with vs.variable_scope("left", initializer=init):
                     fl_inputs = []
                     self.fact_left_inputs.append(fl_inputs)
                     for i in xrange(fact_max_left):
                         fl_inputs.append(tf.placeholder(tf.int32, shape=[None],
                                                         name="fact_left{0}{1}".format(j, i)))
-                    left_outputs, _ = rnn.rnn(cell, fl_inputs, dtype=tf.float32)
-                    left_bucket_outputs = []  # only use outputs at bucket positions
-                    for b in left_fact_buckets:
-                        left_bucket_outputs.append(left_outputs[b-1])
-                    self.fact_left_outputs.append(left_bucket_outputs)
+
+                    left_outputs = _rnn_with_buckets(fl_inputs, left_fact_buckets, cell, reuse=j > 0)
+                    self.fact_left_outputs.append(left_outputs)
 
                 with vs.variable_scope("right", initializer=init):
                     fr_inputs = []
@@ -85,12 +81,10 @@ class KBPopulation(object):
                     for i in xrange(fact_max_right):
                         fr_inputs.append(tf.placeholder(tf.int32, shape=[None],
                                                         name="fact_right{0}{1}".format(j, i)))
-                    right_outputs, _ = rnn.rnn(cell, fr_inputs, dtype=tf.float32)
-                    right_bucket_outputs = []  # only use outputs at bucket positions
-                    for b in right_fact_buckets:
-                        right_bucket_outputs.append(right_outputs[b-1])
-                    self.fact_right_outputs.append(right_bucket_outputs)
-                    
+                    right_outputs = _rnn_with_buckets(fr_inputs, right_fact_buckets, cell, reuse=j > 0)
+                    # output for each bucket for each fact
+                    self.fact_right_outputs.append(right_outputs)
+
         if not forward_only:
             self.fact_left_grad = []
             self.fact_right_grad = []
@@ -123,27 +117,20 @@ class KBPopulation(object):
         self.query_left_inputs = []
         self.query_right_inputs = []
 
-        self.query_left_outputs = []
-        self.query_right_outputs = []
-
         with vs.variable_scope("query", initializer=init):
             with vs.variable_scope("left", initializer=init):
                 for i in xrange(query_max_left):
                     self.query_left_inputs.append(tf.placeholder(tf.int32, shape=[None],
                                                   name="query_left{0}".format(i)))
                 # output for each bucket
-                left_outputs, _ = rnn.rnn(cell, self.query_left_inputs, dtype=tf.float32)
-                for b in left_query_buckets:
-                    self.query_left_outputs.append(left_outputs[b-1])
+                self.query_left_outputs = _rnn_with_buckets(self.query_left_inputs, left_query_buckets, cell)
 
             with vs.variable_scope("right", initializer=init):
                 for i in xrange(query_max_right):
                     self.query_right_inputs.append(tf.placeholder(tf.int32, shape=[None],
                                                    name="query_right{0}".format(i)))
                 # output for each bucket
-                right_outputs, _ = rnn.rnn(cell, self.query_right_inputs, dtype=tf.float32)
-                for b in right_query_buckets:
-                    self.query_right_outputs.append(right_outputs[b-1])
+                self.query_right_outputs = _rnn_with_buckets(self.query_right_inputs, right_query_buckets, cell)
 
         if not forward_only:
             self.query_left_updates = []  # updates for each bucket
@@ -313,3 +300,41 @@ def sample_model(sess, batch_size=1):
 
 
 
+def test_forward_backward(sess, model):
+    s = tf.Session()
+    batch_size = 2
+    model = sample_model(s, batch_size=batch_size)
+    s.run(tf.initialize_all_variables())
+    ##### FORWARD ######
+    # facts
+    left_fact_bucket_ids = [0, 0]
+    right_fact_bucket_ids = [0, 0]
+
+    fact_inputs = {}
+    fact_outputs = []
+    for i in xrange(model.max_facts):
+        fact_outputs.append(model.fact_left_outputs[i][left_fact_bucket_ids[i]])
+        fact_outputs.append(model.fact_right_outputs[i][left_fact_bucket_ids[i]])
+        fact_inputs[model.fact_left_inputs[i][left_fact_bucket_ids[i]]] = np.zeros([batch_size, 1])  # Example
+        fact_inputs[model.fact_right_inputs[i][right_fact_bucket_ids[i]]] = np.ones([batch_size, 1])  # Example
+
+    fact_embeddings = s.run(fact_outputs, fact_inputs)
+    # concatenate left and right fact embeddings for each fact
+    concat_facts = []
+    for i in xrange(model.max_facts):
+        concat_facts.append(np.concatenate((fact_embeddings[2*i], fact_embeddings[2*i+1]), 1))
+
+    # Query
+    left_query_bucket_id = 0
+    right_query_bucket_id = 0
+
+    query_inputs = {}
+    query_outputs = {}
+    fact_inputs[model.query_left_inputs[left_query_bucket_id]] = np.zeros([batch_size, 1])  # Example
+    fact_inputs[model.query_right_inputs[right_query_bucket_id]] = np.ones([batch_size, 1])  # Example
+
+    fact_outputs.append(model.fact_left_outputs[i][left_fact_bucket_ids[i]])
+    fact_outputs.append(model.fact_right_outputs[i][left_fact_bucket_ids[i]])
+    fact_inputs[model.fact_left_inputs[i][left_fact_bucket_ids[i]]] = np.zeros([batch_size, 1])  # Example
+    fact_inputs[model.fact_right_inputs[i][right_fact_bucket_ids[i]]] = np.ones([batch_size, 1])  # Example
+    tf.assign()
