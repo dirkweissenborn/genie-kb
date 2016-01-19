@@ -7,148 +7,62 @@ import pickle
 import os
 import tensorflow as tf
 from tensorflow.models.rnn import *
-from tensorflow.models.rnn import seq2seq
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.ops.math_ops import tanh
-from tensorflow.python.ops.linalg_ops import *
 from tensorflow.models.rnn import rnn
 
 
 class KBPopulation(object):
 
-    def __init__(self, size, vocab, concept_vocab, max_facts, left_fact_buckets, right_fact_buckets,
-                 left_query_buckets, right_query_buckets, batch_size, num_samples=200, max_grad_norm=5,
+    def __init__(self, size, vocab, concept_vocab, max_facts, fact_left_buckets, fact_right_buckets,
+                 query_left_buckets, query_right_buckets, batch_size, num_samples=200, max_grad=5,
                  dropout_prob=0, learning_rate=1e-3, num_layers=1, learning_rate_decay_factor=1, forward_only=True):
         self.learning_rate = tf.Variable(float(learning_rate), trainable=False, name="lr")
         self.learning_rate_decay_op = self.learning_rate.assign(learning_rate * learning_rate_decay_factor)
         self.global_step = tf.Variable(0, trainable=False, name="step")
-
-        self.vocab = vocab
-        self.dropout_prob = dropout_prob
         self.max_facts = max_facts
-        self.left_fact_buckets = left_fact_buckets
-        self.right_fact_buckets = right_fact_buckets
-        self.left_query_buckets = left_query_buckets
-        self.right_query_buckets = right_query_buckets
-        self.max_grad_norm = max_grad_norm
+        self.vocab = vocab
+        self.concept_vocab = concept_vocab
+        self.dropout_prob = dropout_prob
+        self.max_grad = max_grad
+        self.size = size
+        self.num_layers = num_layers
+        self.num_samples = num_samples
 
         self.opt = tf.train.AdamOptimizer(self.learning_rate)
-        if not forward_only:
-            init = tf.random_uniform_initializer(-0.1, 0.1)
+        init = tf.random_uniform_initializer(-0.1, 0.1)
 
-        fact_max_left = self.left_fact_buckets[-1]
-        fact_max_right = self.right_fact_buckets[-1]
-
-        query_max_left = self.left_query_buckets[-1]
-        query_max_right = self.right_query_buckets[-1]
-
-        vocab_size = len(self.vocab)
-    
         # Slightly better results can be obtained with forget gate biases
         # initialized to 1 but the hyperparameters of the model would need to be
         # different than reported in the paper.
         lstm_cell = rnn_cell.BasicLSTMCell(size, forget_bias=0.0)
         if not forward_only and dropout_prob > 0:
-            lstm_cell = rnn_cell.DropoutWrapper(
-                lstm_cell, output_keep_prob=1-dropout_prob)
+            lstm_cell = rnn_cell.DropoutWrapper(lstm_cell, output_keep_prob=1-dropout_prob)
         cell = rnn_cell.MultiRNNCell([lstm_cell] * num_layers)
         cell = rnn_cell.EmbeddingWrapper(cell, len(self.vocab))
 
-        def var_in_scope(v):
-            return v.name.startswith(tf.get_variable_scope().name)
-
         #  Computation graphs for facts
-        self.fact_left_inputs = []  # fact_num -> bucket_id
-        self.fact_right_inputs = []
-        self.fact_left_outputs = []
-        self.fact_right_outputs = []
+        self.fact_left_rnns = []  # fact_num -> bucket_id
+        self.fact_right_rnns = []
 
-        with vs.variable_scope("fact", initializer=init):
-            for j in xrange(max_facts):
-                with vs.variable_scope("left", initializer=init):
-                    fl_inputs = []
-                    self.fact_left_inputs.append(fl_inputs)
-                    for i in xrange(fact_max_left):
-                        fl_inputs.append(tf.placeholder(tf.int32, shape=[None],
-                                                        name="fact_left{0}{1}".format(j, i)))
+        for j in xrange(max_facts):
+            self.fact_left_rnns.append(RNNWithBuckets(size, cell, fact_left_buckets, "%d" % j, "fact/left", j>0,
+                                                      self.opt, self.max_grad, init=init, forward_only=forward_only))
 
-                    left_outputs = _rnn_with_buckets(fl_inputs, left_fact_buckets, cell, reuse=j > 0)
-                    self.fact_left_outputs.append(left_outputs)
+            self.fact_right_rnns.append(RNNWithBuckets(size, cell, fact_right_buckets, "%d" % j, "fact/right", j>0,
+                                                       self.opt, self.max_grad, init=init, forward_only=forward_only))
 
-                with vs.variable_scope("right", initializer=init):
-                    fr_inputs = []
-                    self.fact_right_inputs.append(fr_inputs)
-                    for i in xrange(fact_max_right):
-                        fr_inputs.append(tf.placeholder(tf.int32, shape=[None],
-                                                        name="fact_right{0}{1}".format(j, i)))
-                    right_outputs = _rnn_with_buckets(fr_inputs, right_fact_buckets, cell, reuse=j > 0)
-                    # output for each bucket for each fact
-                    self.fact_right_outputs.append(right_outputs)
-
-        if not forward_only:
-            self.fact_left_grad = []
-            self.fact_right_grad = []
-
-            self.fact_left_updates = []
-            self.fact_right_updates = []
-
-            for j in xrange(max_facts):
-                # Left updates
-                fl_grad = tf.placeholder(tf.float32, shape=[None, size], name="fact_left_grad{0}".format(j))
-                self.fact_left_grad.append(fl_grad)
-                fl_updates = []
-                self.fact_left_updates.append(fl_updates)
-                params = filter(lambda v: var_in_scope(v), tf.trainable_variables())
-                for o in self.fact_left_outputs[j]:  # create update ops for each bucket
-                    fl_param_grads = tf.gradients(o, params, fl_grad)
-                    fl_updates.append(self._train_ops(params, fl_param_grads))
-
-                # Right updates
-                fr_grad = tf.placeholder(tf.float32, shape=[None, size], name="fact_right_grad{0}".format(j))
-                self.fact_right_grad.append(fr_grad)
-                fr_updates = []
-                self.fact_right_updates.append(fr_updates)
-                params = filter(lambda v: var_in_scope(v), tf.trainable_variables())
-                for o in self.fact_right_outputs[j]:  # create updates for each bucket
-                    fr_param_grads = tf.gradients(o, params, fr_grad)
-                    fr_updates.append(self._train_ops(params, fr_param_grads))
-
-        #  Computation graph for query
+        #  Computation graphs for query
         self.query_left_inputs = []
         self.query_right_inputs = []
 
-        with vs.variable_scope("query", initializer=init):
-            with vs.variable_scope("left", initializer=init):
-                for i in xrange(query_max_left):
-                    self.query_left_inputs.append(tf.placeholder(tf.int32, shape=[None],
-                                                  name="query_left{0}".format(i)))
-                # output for each bucket
-                self.query_left_outputs = _rnn_with_buckets(self.query_left_inputs, left_query_buckets, cell)
+        self.query_left_rnn = RNNWithBuckets(size, cell, query_left_buckets, "", "query/left", False,
+                                             self.opt, self.max_grad, init=init, forward_only=forward_only)
 
-            with vs.variable_scope("right", initializer=init):
-                for i in xrange(query_max_right):
-                    self.query_right_inputs.append(tf.placeholder(tf.int32, shape=[None],
-                                                   name="query_right{0}".format(i)))
-                # output for each bucket
-                self.query_right_outputs = _rnn_with_buckets(self.query_right_inputs, right_query_buckets, cell)
+        self.query_right_rnn = RNNWithBuckets(size, cell, query_right_buckets, "", "query/right", False,
+                                              self.opt, self.max_grad, init=init, forward_only=forward_only)
 
-        if not forward_only:
-            self.query_left_updates = []  # updates for each bucket
-            self.query_left_grad = tf.placeholder(tf.float32, shape=[None, size], name="query_left_grad")
-
-            params = filter(lambda v: var_in_scope(v), tf.trainable_variables())
-            for o in self.query_left_outputs:  # create updates for each bucket
-                ql_param_grads = tf.gradients(o, params, self.query_left_grad)
-                self.query_left_updates.append(self._train_ops(params, ql_param_grads))
-
-            self.query_right_updates = []  # updates for each bucket
-            self.query_right_grad = tf.placeholder(tf.float32, shape=[None, size], name="query_right_grad")
-
-            params = filter(lambda v: var_in_scope(v), tf.trainable_variables())
-            for o in self.query_right_outputs:  # create updates for each bucket
-                ql_param_grads = tf.gradients(o, params, self.query_right_grad)
-                self.query_right_updates.append(self._train_ops(params, ql_param_grads))
-
+        # classification graph
         #  attention over facts given query vector + query vector -> softmax over concepts
         self.query_input = tf.placeholder(tf.float32, shape=[None, 2*size], name="query_input")
         self.attention_states_input = []
@@ -164,7 +78,7 @@ class KBPopulation(object):
         # candidates (i.e., their ids) are given by user, first candidate is assumed to be correct
         self.neg_candidates = tf.placeholder(tf.int64, shape=[None, num_samples], name="neg_candidates")
         # labels
-        self.labels = tf.placeholder(tf.int32, shape=[None], name="labels")
+        self.labels = tf.placeholder(tf.int64, shape=[None], name="labels")
 
         # sampling prob for each candidate
         self.sampling_prob = tf.placeholder(tf.float32, shape=[None, num_samples], name="sampling_prob")
@@ -210,131 +124,221 @@ class KBPopulation(object):
                 true_label_prob = np.ones([batch_size, 1], dtype=np.float32)
                 if not forward_only:
                     flat_cands = tf.reshape(self.neg_candidates, [-1])
+                    flat_sampling_prob = tf.reshape(self.sampling_prob, [-1])
                     self.loss = \
                         tf.nn.sampled_softmax_loss(w, b, proj, labels, num_samples, len(concept_vocab),
-                                                   sampled_values=(flat_cands, true_label_prob, self.sampling_prob))
+                                                   remove_accidental_hits=False,
+                                                   sampled_values=(flat_cands, true_label_prob, flat_sampling_prob))
                 else:
+                    self.cands = tf.concat(1,[tf.reshape(self.labels, [-1, 1]), self.neg_candidates])
                     # get weights for candidats
-                    w_cands = tf.nn.embedding_lookup(w, self.neg_candidates)  # batch_size x cands x size
-                    b_cands = tf.nn.embedding_lookup(b, self.neg_candidates)  # batch_size x cands
+                    w_cands = tf.nn.embedding_lookup(w, self.cands)  # batch_size x cands x size
+                    b_cands = tf.nn.embedding_lookup(b, self.cands)  # batch_size x cands
                     proj = tf.expand_dims(proj, 2)  # batch_size x size x 1
                     # calc scores for all interactions
                     scores = tf.squeeze(tf.batch_matmul(w_cands, proj), [2]) + b_cands  # batch_size x cands
                     self.output = tf.nn.softmax(scores)
 
         # Gradients and SGD update operation for training the model.
-        params = [self.query_input] + self.attention_states_input + tf.trainable_variables()
         if not forward_only:
-            train_params = tf.trainable_variables()
+            with vs.variable_scope("classification", initializer=init):
+                train_params = filter(lambda v: _var_in_scope(v), tf.trainable_variables())
+            params = [self.query_input] + self.attention_states_input + train_params
             gradients = tf.gradients(self.loss, params)
             self.attention_states_grads = gradients[1:-len(train_params)]
             self.query_input_grad = gradients[0]
-            train_grads = gradients[-len(train_params):]
-            self.classification_update = self._train_ops(train_params, train_grads, self.global_step)
+            self.grads = gradients[-len(train_params):]
+            clipped_gradients = _clip_by_value(self.grads, -self.max_grad, self.max_grad)
+            self.update = self.opt.apply_gradients(zip(clipped_gradients, train_params), global_step=self.global_step)
 
         self.saver = tf.train.Saver(tf.all_variables())
 
-    def _train_ops(self, train_params, gradients, step=None):
-        clipped_gradients, self.gradient_norm = tf.clip_by_global_norm(gradients, self.max_grad_norm)
-        return self.opt.apply_gradients(zip(clipped_gradients, train_params), global_step=step)
 
+class RNNWithBuckets(object):
 
-def _rnn_with_buckets(inputs, buckets, cell, reuse=False, name=None):
-    if len(inputs) < buckets[-1]:
-        raise ValueError("Length of encoder_inputs (%d) must be at least that of la"
-                         "st bucket (%d)." % (len(inputs), buckets[-1]))
-
-    outputs = []
-    with ops.op_scope(inputs, name, "rnn_with_buckets"):
-        for j in xrange(len(buckets)):
-            if j > 0 or reuse:
+    def __init__(self, size, cell, buckets, name, scope, reuse, opt, max_grad, init=None, forward_only=True):
+        self.buckets = buckets
+        self.inputs = []
+        self.outputs = []
+        with vs.variable_scope(scope, initializer=init):
+            if reuse:
                 vs.get_variable_scope().reuse_variables()
-            bucket_encoder_inputs = [inputs[i] for i in xrange(buckets[j])]
-            bucket_outputs, _ = rnn.rnn(cell, bucket_encoder_inputs, dtype=tf.float32)
-            outputs.append(bucket_outputs[-1])
-    return outputs
+            with vs.variable_scope(name):
+                for i in xrange(buckets[-1]):
+                    self.inputs.append(tf.placeholder(tf.int32, shape=[None], name="input{0}".format(i)))
 
-#size, vocab, concept_vocab, max_facts, fact_max, query_max, batch_size,
-#num_samples=200, dropout_prob=0, learning_rate=1e-3, num_layers=1, learning_rate_decay_factor=1, forward_only=True
+            outputs, _ = rnn.rnn(cell, self.inputs, dtype=tf.float32)
+            for i in buckets:
+                self.outputs.append(outputs[i-1])
+
+        if not forward_only:
+            self.updates = []
+            self.grads = []
+            with vs.variable_scope(scope):
+                with vs.variable_scope(name):
+                    self.out_grad = tf.placeholder(tf.float32, shape=[None, size], name="grad")
+                params = filter(lambda v: _var_in_scope(v), tf.trainable_variables())
+            for o in self.outputs:  # create update ops for each bucket
+                grads = tf.gradients(o, params, self.out_grad)
+                self.grads.append(grads)
+                clipped_grads = _clip_by_value(grads, -max_grad, max_grad)
+                self.updates.append(opt.apply_gradients(zip(clipped_grads, params)))
+
+
+def _clip_by_value(gradients, min_value, max_value):
+    return [tf.clip_by_value(g, min_value, max_value) for g in gradients]
+
+
+def get_dep_tensors(output_tensors, input_tensors, current=None):
+    res = set()
+    for o in output_tensors:
+        if o not in input_tensors:  # we do not want to add placeholders, for example
+            current_new = set()
+            current_new.add(o)
+            if current:
+                current_new = current_new.union(current)
+            res = res.union(get_dep_tensors(o.op.inputs, input_tensors, current_new))
+        else:
+            res = res.union(current)
+        # return current set if we reached input tensor other wise discard current
+    return res
+
+
+def _var_in_scope(v):
+    return v and v.name.startswith(tf.get_variable_scope().name)
+
+
 def load_model(sess, path, batch_size=1, forward_only=True):
     with open(os.path.join(path, "config.pkl"), "r") as f:
         c = pickle.load(f)  # configuration
-        model = KBPopulation(c["size"], c["vocab"], c["concept_vocab"], c["max_facts"], c["fact_max"], c["query_max"],
+        model = KBPopulation(c["size"], c["vocab"], c["concept_vocab"], c["max_facts"], c["fact_left_buckets"],
+                             c["fact_right_buckets"], c["query_left_buckets"], c["query_right_buckets"],
                              batch_size, num_samples=c["num_samples"], dropout_prob=c["dropout_prob"],
-                             num_layers=c["num_layers"], forward_only=forward_only)
+                             num_layers=c["num_layers"], max_grad=c["max_grad"], forward_only=forward_only)
         model.saver.restore(sess, os.path.join(path, "model.tf"))
     return model
 
 
 def save_model(sess, path, model):
-    configuration = {"source_vocab": model.source_vocab,
-                     "target_vocab": model.target_vocab,
-                     "relations": model.relations,
-                     "tuple_vocab": model.tuple_vocab,
-                     "kb_shape": model.kb_shape,
-                     "buckets": model.buckets,
-                     "size": model.size,
-                     "num_layers": model.num_layers}
+    configuration = {"size": model.size,
+                     "vocab": model.vocab,
+                     "concept_vocab": model.concept_vocab,
+                     "max_facts": model.max_facts,
+                     "fact_left_buckets": model.fact_left_rnns[0].buckets,
+                     "fact_right_buckets": model.fact_right_rnns[0].buckets,
+                     "query_left_buckets": model.query_left_rnn.buckets,
+                     "query_right_buckets": model.query_right_rnn.buckets,
+                     "num_layers": model.num_layers,
+                     "num_samples": model.num_samples,
+                     "max_grad": model.max_grad,
+                     "dropout_prob": model.dropout_prob}
     if not os.path.exists(path):
         os.makedirs(path)
-    with open(os.path.join(path,"config.pkl"), "w") as f:
+    with open(os.path.join(path, "config.pkl"), "w") as f:
         pickle.dump(configuration, f)
     model.saver.save(sess, os.path.join(path, "model.tf"))
 
-#size, vocab, concept_vocab, max_facts, left_fact_buckets, right_fact_buckets,
-#left_query_buckets, right_query_buckets, batch_size, num_samples=200, max_grad_norm=5,
-#dropout_prob=0, learning_rate=1e-3, num_layers=1, learning_rate_decay_factor=1, forward_only=True
-def sample_model(sess, batch_size=1):
+
+def sample_model(sess, batch_size=1, forward_only=False):
     size = 2
-    vocab = {"a":0, "b":1}
-    concept_vocab = {"c1":0, "c2":1}
+    vocab = {"a": 0, "b": 1}
+    concept_vocab = {"c1": 0, "c2": 1}
     max_facts = 3
-    left_fact_buckets = [1,3]
-    right_fact_buckets = [1,2]
-    left_query_buckets = [1,2]
-    right_query_buckets = [1,2]
-    model = KBPopulation(size, vocab, concept_vocab, max_facts, left_fact_buckets, right_fact_buckets,
-                         left_query_buckets, right_query_buckets, batch_size, num_samples=1, forward_only=False)
+    fact_left_buckets = [1, 3]
+    fact_right_buckets = [1, 2]
+    query_left_buckets = [1, 2]
+    query_right_buckets = [1, 2]
+    model = KBPopulation(size, vocab, concept_vocab, max_facts, fact_left_buckets, fact_right_buckets,
+                         query_left_buckets, query_right_buckets, batch_size, num_samples=1, forward_only=forward_only)
     sess.run(tf.initialize_all_variables())
     return model
 
 
-
-def test_forward_backward(sess, model):
+def test_forward_backward():
     s = tf.Session()
+
     batch_size = 2
     model = sample_model(s, batch_size=batch_size)
     s.run(tf.initialize_all_variables())
-    ##### FORWARD ######
+
+    # ----- FORWARD ------
     # facts
-    left_fact_bucket_ids = [0, 0]
-    right_fact_bucket_ids = [0, 0]
+    fact_left_bucket_ids = [0, 0, 0]
+    fact_right_bucket_ids = [0, 0, 0]
 
     fact_inputs = {}
     fact_outputs = []
     for i in xrange(model.max_facts):
-        fact_outputs.append(model.fact_left_outputs[i][left_fact_bucket_ids[i]])
-        fact_outputs.append(model.fact_right_outputs[i][left_fact_bucket_ids[i]])
-        fact_inputs[model.fact_left_inputs[i][left_fact_bucket_ids[i]]] = np.zeros([batch_size, 1])  # Example
-        fact_inputs[model.fact_right_inputs[i][right_fact_bucket_ids[i]]] = np.ones([batch_size, 1])  # Example
+        fact_outputs.append(model.fact_left_rnns[i].outputs[fact_left_bucket_ids[i]])
+        fact_outputs.append(model.fact_right_rnns[i].outputs[fact_right_bucket_ids[i]])
+        fact_inputs[model.fact_left_rnns[i].inputs[0]] = np.zeros([batch_size])  # Example
+        fact_inputs[model.fact_right_rnns[i].inputs[0]] = np.ones([batch_size])  # Example
 
-    fact_embeddings = s.run(fact_outputs, fact_inputs)
+    dep_fact_tensors = list(get_dep_tensors(fact_outputs, fact_inputs.keys()))
+    dep_fact_tensors = fact_outputs + filter(lambda t: t not in fact_outputs, dep_fact_tensors)
+    fact_state = s.run(dep_fact_tensors, fact_inputs)
+
     # concatenate left and right fact embeddings for each fact
     concat_facts = []
     for i in xrange(model.max_facts):
-        concat_facts.append(np.concatenate((fact_embeddings[2*i], fact_embeddings[2*i+1]), 1))
+        concat_facts.append(np.concatenate((fact_state[2*i], fact_state[2*i+1]), 1))
 
     # Query
-    left_query_bucket_id = 0
-    right_query_bucket_id = 0
+    query_left_bucket_id = 0
+    query_right_bucket_id = 0
 
     query_inputs = {}
-    query_outputs = {}
-    fact_inputs[model.query_left_inputs[left_query_bucket_id]] = np.zeros([batch_size, 1])  # Example
-    fact_inputs[model.query_right_inputs[right_query_bucket_id]] = np.ones([batch_size, 1])  # Example
+    query_outputs = [model.query_left_rnn.outputs[query_left_bucket_id],
+                     model.query_right_rnn.outputs[query_right_bucket_id]]
 
-    fact_outputs.append(model.fact_left_outputs[i][left_fact_bucket_ids[i]])
-    fact_outputs.append(model.fact_right_outputs[i][left_fact_bucket_ids[i]])
-    fact_inputs[model.fact_left_inputs[i][left_fact_bucket_ids[i]]] = np.zeros([batch_size, 1])  # Example
-    fact_inputs[model.fact_right_inputs[i][right_fact_bucket_ids[i]]] = np.ones([batch_size, 1])  # Example
-    tf.assign()
+    query_inputs[model.query_left_rnn.inputs[0]] = np.zeros([batch_size])  # Example
+    query_inputs[model.query_right_rnn.inputs[0]] = np.ones([batch_size])  # Example
+
+    dep_query_tensors = list(get_dep_tensors(query_outputs, query_inputs.keys()))
+    dep_query_tensors = query_outputs + filter(lambda t: t not in query_outputs, dep_query_tensors)
+    query_state = s.run(dep_query_tensors, query_inputs)
+
+    concat_query = np.concatenate((query_state[0], query_state[1]), 1)
+
+    # Classification
+    classification_input = dict(zip(model.attention_states_input, concat_facts))
+    classification_input[model.query_input] = concat_query
+    classification_input[model.neg_candidates] = np.array([[1], [0]])
+    classification_input[model.labels] = np.array([0,1])
+    classification_input[model.sampling_prob] = np.array([[1.0], [1.0]])
+
+    grads = s.run([model.update, model.loss, model.query_input_grad] + model.attention_states_grads,
+                  feed_dict=classification_input)
+
+    loss = grads[1]
+    query_grad = grads[2]
+    fact_grads = grads[3:]
+
+    # --- BACKWARD ---
+    # facts
+    fact_updates = []
+    fact_inputs_u = dict(fact_inputs)
+    for i in xrange(model.max_facts):
+        g = fact_grads[i]
+        fact_inputs_u[model.fact_left_rnns[i].out_grad] = g[:, :g.shape[1]/2]
+        fact_inputs_u[model.fact_right_rnns[i].out_grad] = g[:, g.shape[1]/2:]
+        fact_updates.append(model.fact_left_rnns[i].updates[fact_left_bucket_ids[i]])
+        fact_updates.append(model.fact_right_rnns[i].updates[fact_right_bucket_ids[i]])
+
+    for i in xrange(len(dep_fact_tensors)):
+        fact_inputs_u[dep_fact_tensors[i]] = fact_state[i]
+
+    s.run(fact_updates, fact_inputs_u)
+    
+    # query
+    query_updates = []
+    query_updates.append(model.query_left_rnn.updates[query_left_bucket_id])
+    query_updates.append(model.query_right_rnn.updates[query_right_bucket_id])
+    query_inputs_u = dict(query_inputs)
+    query_inputs_u[model.query_left_rnn.out_grad] = query_grad[:, :query_grad.shape[1]/2]
+    query_inputs_u[model.query_right_rnn.out_grad] = query_grad[:, query_grad.shape[1]/2:]
+
+    for i in xrange(len(dep_query_tensors)):
+        query_inputs_u[dep_query_tensors[i]] = query_state[i]
+
+    s.run(query_updates, query_inputs_u)
