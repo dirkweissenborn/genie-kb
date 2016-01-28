@@ -7,7 +7,11 @@ def rank_triple(sess, kb, model, triple, position="obj"):
 
     neg_triples = filter(lambda e:
                          not kb.contains_fact(True, "train", rel, subj, e) if position == "obj"
-                         else not kb.contains_fact(True, "train", rel, e, obj),
+                         else not kb.contains_fact(True, "train", rel, e, obj) and \
+                         not kb.contains_fact(True, "test", rel, subj, e) if position == "obj"
+                         else not kb.contains_fact(True, "test", rel, e, obj) and \
+                         not kb.contains_fact(True, "valid", rel, subj, e) if position == "obj"
+                         else not kb.contains_fact(True, "valid", rel, e, obj) ,
                          kb.get_symbols(dim))
 
     neg_triples = map(lambda e: (rel, subj, e) if position == "obj" else (rel, e, obj), neg_triples)
