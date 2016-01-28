@@ -80,6 +80,8 @@ class KBPopulation(object):
         # labels
         self.labels = tf.placeholder(tf.int64, shape=[None], name="labels")
 
+        self.fact_concepts = tf.placeholder(tf.int64, shape=[None, num_samples], name="fact_concepts")
+
         # sampling prob for each candidate
         self.sampling_prob = tf.placeholder(tf.float32, shape=[None, num_samples], name="sampling_prob")
 
@@ -104,16 +106,18 @@ class KBPopulation(object):
                 w_score = tf.tile(w_score, [batch_size, 1, 1])  # batch_size x size x 1
                 scores = tf.squeeze(tf.batch_matmul(interact, w_score), [2])  # batch_size x facts
 
+                self.scores = tf.segment_sum(scores, self.fact_concepts, name="attention_scores")
+
                 # calculate actual attention with kb_bias
-                self.attention_weights = tf.nn.softmax(scores)  # batch_size x facts
-                attention_weights = tf.expand_dims(self.attention_weights, 1)  # batch_size x 1 x facts
+                #self.attention_weights = tf.nn.softmax(scores)  # batch_size x facts
+                # attention_weights = tf.expand_dims(self.attention_weights, 1)  # batch_size x 1 x facts
                 # start_state of decoder are attention weighted relation embeddings
-                attention = tf.batch_matmul(attention_weights, attention_states)  # batch_size x 1 x att_size
-                attention = tf.squeeze(attention, [1])  # batch_size x att_size
+                # attention = tf.batch_matmul(attention_weights, attention_states)  # batch_size x 1 x att_size
+                # attention = tf.squeeze(attention, [1])  # batch_size x att_size
 
             proj = tf.matmul(self.query_input, tf.get_variable("w_q_inter", [attention_vec_size, size])) + \
-                   tf.matmul(attention, tf.get_variable("w_a_inter", [attention_vec_size, size])) + \
                    tf.get_variable("b_inter", [size])
+                  # tf.matmul(attention, tf.get_variable("w_a_inter", [attention_vec_size, size])) + \
             proj = tf.nn.tanh(proj)
 
             with tf.device("/cpu:0"):
@@ -131,12 +135,14 @@ class KBPopulation(object):
                                                    sampled_values=(flat_cands, true_label_prob, flat_sampling_prob))
                 else:
                     self.cands = tf.concat(1,[tf.reshape(self.labels, [-1, 1]), self.neg_candidates])
-                    # get weights for candidats
-                    w_cands = tf.nn.embedding_lookup(w, self.cands)  # batch_size x cands x size
-                    b_cands = tf.nn.embedding_lookup(b, self.cands)  # batch_size x cands
-                    proj = tf.expand_dims(proj, 2)  # batch_size x size x 1
+                    # get weights for candidates
+                    w_t = tf.transpose(w)
+                    #w_cands = tf.nn.embedding_lookup(w, self.cands)  # batch_size x cands x size
+                    #b_cands = tf.nn.embedding_lookup(b, self.cands)  # batch_size x cands
+                    scores = tf.matmul(proj, w_t) + b
+                    #proj = tf.expand_dims(proj, 2)  # batch_size x size x 1
                     # calc scores for all interactions
-                    scores = tf.squeeze(tf.batch_matmul(w_cands, proj), [2]) + b_cands  # batch_size x cands
+                    #scores = tf.squeeze(tf.batch_matmul(w_cands, proj), [2]) + b_cands  # batch_size x cands
                     self.output = tf.nn.softmax(scores)
 
         # Gradients and SGD update operation for training the model.
