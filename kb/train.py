@@ -97,13 +97,26 @@ with tf.Session() as sess:
         i += 1
         start_time = time.time()
 
-        pos, negs = fact_sampler.get_batch()
+        pos, negs = next_batch.get()
+        end_of_epoch = fact_sampler.end_of_epoch()
+        # already fetch next batch parallel to running model
+        if FLAGS.kb_only:
+            next_batch = fact_sampler.get_batch_async()
+        else:
+            next_batch = text_sampler.get_batch_async()
+
         loss += model.step(sess, pos, negs, mode)
 
         if not FLAGS.kb_only:
             sess.run(model.training_weight.assign(FLAGS.tau))
-            for i in xrange((num_text/num_kb)):
-                pos, negs = text_sampler.get_batch()
+            n = (num_text/num_kb)
+            for i in xrange(n):
+                pos, negs = next_batch.get()
+                # already fetch next batch parallel to running model
+                if i < n-1:
+                    next_batch = text_sampler.get_batch_async()  # next batch should be from text
+                else:
+                    next_batch = fact_sampler.get_batch_async()  # next batch should be from facts
                 l = model.step(sess, pos, negs, mode)
                 loss += l
             sess.run(model.training_weight.assign(1.0))
