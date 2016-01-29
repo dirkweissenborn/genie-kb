@@ -13,7 +13,7 @@ class BatchNegTypeSampler:
         self.num_facts = len(self.facts)
         self.epoch_size = self.num_facts / self.pos_per_batch
         self.reset()
-        self.__pool = Pool(8)
+        self.__pool = Pool()
 
         # we use sampling with type constraints
         if type_constrained:
@@ -174,6 +174,9 @@ class BatchNegTypeSampler:
             pos_ret.extend(pos)
 
         return pos_ret, negs
+
+    def get_batch_async(self, position="both"):
+        self.__pool.apply_async(self.get_batch, (position))
 
     def get_epoch(self):
         return self.count / float(self.num_facts)

@@ -6,7 +6,6 @@ from sampler import *
 from eval import eval_triples
 from model.models import *
 import sys
-from multiprocessing.dummy import Pool
 
 
 # data loading specifics
@@ -70,8 +69,6 @@ if FLAGS.ckpt_its <= 0:
     print "Setting checkpoint iteration to size of whole epoch."
     FLAGS.ckpt_its = fact_sampler.epoch_size
 
-pool = Pool(1)
-
 with tf.Session() as sess:
     model = DistMult(kb, FLAGS.size, batch_size, num_neg=FLAGS.num_neg, learning_rate=FLAGS.learning_rate,
                      l2_lambda=FLAGS.l2_lambda, is_batch_training=FLAGS.batch_train)
@@ -86,7 +83,7 @@ with tf.Session() as sess:
     if FLAGS.batch_train:
         mode = "accumulate"
 
-    next_batch = pool.apply_async(fact_sampler.get_batch, ())
+    next_batch = fact_sampler.get_batch_async()
 
     while FLAGS.max_iterations < 0 or i < FLAGS.max_iterations:
         i += 1
@@ -96,9 +93,9 @@ with tf.Session() as sess:
         end_of_epoch = fact_sampler.end_of_epoch()
         # already fetch next batch parallel to running model
         if FLAGS.kb_only:
-            next_batch = pool.apply_async(fact_sampler.get_batch, ())
+            next_batch = fact_sampler.get_batch_async()
         else:
-            next_batch = pool.apply_async(text_sampler.get_batch, ())
+            next_batch = text_sampler.get_batch_async()
 
         loss += model.step(sess, pos, negs, mode)
 
@@ -109,9 +106,9 @@ with tf.Session() as sess:
                 pos, negs = next_batch.get()
                 # already fetch next batch parallel to running model
                 if i < n-1:
-                    next_batch = pool.apply_async(text_sampler.get_batch, ())  # next batch should be from text
+                    next_batch = text_sampler.get_batch_async()  # next batch should be from text
                 else:
-                    next_batch = pool.apply_async(fact_sampler.get_batch, ())  # next batch should be from facts
+                    next_batch = fact_sampler.get_batch_async()  # next batch should be from facts
                 l = model.step(sess, pos, negs, mode)
                 loss += l
             sess.run(model.training_weight.assign(1.0))
