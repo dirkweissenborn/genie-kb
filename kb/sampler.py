@@ -176,7 +176,7 @@ class BatchNegTypeSampler:
         return pos_ret, negs
 
     def get_batch_async(self, position="both"):
-        self.__pool.apply_async(self.get_batch, (position))
+        return self.__pool.apply_async(self.get_batch, (position))
 
     def get_epoch(self):
         return self.count / float(self.num_facts)
