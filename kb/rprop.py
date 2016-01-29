@@ -102,12 +102,13 @@ class RPropOptimizer(optimizer.Optimizer):
         new_step = step * tf.reshape(stepmul_up, tf.shape(step))
         new_step = tf.maximum(new_step, self._stepsizemin)
         new_step = tf.minimum(new_step, self._stepsizemax)
-        new_step = tf.Print(new_step, [new_step], "step")
+
         step_a = step.assign(new_step)
         up = new_step * tf.sign(grad)
         var_update = var.assign_sub(up, use_locking=self._use_locking)
-        last_grad_u = last_grad.assign(grad)
-        return tf.group(*[var_update, step_a, stepmul_up, last_grad_u])
+        with ops.control_dependencies([var_update]):
+            self.last_grad_update = last_grad.assign(grad)
+        return tf.group(*[var_update, step_a, stepmul_up])
 
 
     def _apply_sparse(self, grad, var):

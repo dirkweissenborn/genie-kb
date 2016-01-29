@@ -97,26 +97,13 @@ with tf.Session() as sess:
         i += 1
         start_time = time.time()
 
-        pos, negs = next_batch.get()
-        end_of_epoch = fact_sampler.end_of_epoch()
-        # already fetch next batch parallel to running model
-        if FLAGS.kb_only:
-            next_batch = fact_sampler.get_batch_async()
-        else:
-            next_batch = text_sampler.get_batch_async()
-
+        pos, negs = fact_sampler.get_batch()
         loss += model.step(sess, pos, negs, mode)
 
-        if False and not FLAGS.kb_only:
+        if not FLAGS.kb_only:
             sess.run(model.training_weight.assign(FLAGS.tau))
-            n = (num_text/num_kb)
-            for i in xrange(n):
-                pos, negs = next_batch.get()
-                # already fetch next batch parallel to running model
-                if i < n-1:
-                    next_batch = text_sampler.get_batch_async()  # next batch should be from text
-                else:
-                    next_batch = fact_sampler.get_batch_async()  # next batch should be from facts
+            for i in xrange((num_text/num_kb)):
+                pos, negs = text_sampler.get_batch()
                 l = model.step(sess, pos, negs, mode)
                 loss += l
             sess.run(model.training_weight.assign(1.0))
@@ -126,14 +113,12 @@ with tf.Session() as sess:
         sys.stdout.write("\r%.1f%%" % (float((i-1) % FLAGS.ckpt_its + 1.0)*100.0 / FLAGS.ckpt_its))
         sys.stdout.flush()
 
-        if end_of_epoch:
+        if fact_sampler.end_of_epoch():
             print ""
             e += 1
             print "Epoch %d done!" % e
             if FLAGS.batch_train:
                 model.acc_l2_gradients(sess)
-                print(reduce( lambda acc,g: acc+np.linalg.norm(g), sess.run( model._acc_gradients), 0.0))
-                print(reduce( lambda acc,g: acc+np.linalg.norm(g), sess.run( tf.trainable_variables()), 0.0))
                 loss = model.update(sess)
                 model.reset_gradients_and_loss(sess)
         #    if FLAGS.l2_lambda > 0:
