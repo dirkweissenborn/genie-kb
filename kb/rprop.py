@@ -66,10 +66,9 @@ class RPropOptimizer(optimizer.Optimizer):
         # variable.
 
         # Create slots for the first and second moments.
-        max_num = 0
         for v in var_list:
             self._zeros_slot(v, "delta", self._name)
-            self._zeros_slot(v, "stepsize", self._name)
+            self._get_or_make_slot(v, tf.fill(v.get_shape(), self._stepsize), "stepsize", self._name)
             self._get_or_make_slot(v, tf.zeros([v.get_shape().num_elements()], dtype=tf.float32), "stepmul", self._name)
 
     def _prepare(self):
@@ -94,21 +93,21 @@ class RPropOptimizer(optimizer.Optimizer):
 
         eta_plus_update = tf.cast(one_indices, tf.float32) * 0.0 + self._etaplus
         eta_minus_update = tf.cast(m_one_indices, tf.float32) * 0.0 + self._etaminus
-        zero_update = tf.cast(zero_indices, tf.float32)
-        zero_update /= zero_update
+        zero_update = tf.cast(zero_indices, tf.float32) * 0.0 + 1
 
-        tf.scatter_update(stepmul, one_indices, eta_plus_update)
-        tf.scatter_update(stepmul, m_one_indices, eta_minus_update)
-        tf.scatter_update(stepmul, zero_indices, zero_update)
+        stepmul_up = tf.scatter_update(stepmul, one_indices, eta_plus_update)
+        stepmul_up = tf.scatter_update(stepmul_up, m_one_indices, eta_minus_update)
+        stepmul_up = tf.scatter_update(stepmul_up, zero_indices, zero_update)
 
-        new_step = step * tf.reshape(stepmul, tf.shape(step))
+        new_step = step * tf.reshape(stepmul_up, tf.shape(step))
         new_step = tf.maximum(new_step, self._stepsizemin)
         new_step = tf.minimum(new_step, self._stepsizemax)
-
-        step = tf.assign(step, new_step)
-        var_update = tf.assign_sub(var, new_step * sign, use_locking=self._use_locking)
-
-        return tf.group(*[var_update, step])
+        new_step = tf.Print(new_step, [new_step], "step")
+        step_a = step.assign(new_step)
+        up = new_step * tf.sign(grad)
+        var_update = var.assign_sub(up, use_locking=self._use_locking)
+        last_grad_u = last_grad.assign(grad)
+        return tf.group(*[var_update, step_a, stepmul_up, last_grad_u])
 
 
     def _apply_sparse(self, grad, var):

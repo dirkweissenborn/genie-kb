@@ -37,7 +37,7 @@ class AbstractKBScoringModel:
                 self.opt = rprop.RPropOptimizer()  # tf.train.GradientDescentOptimizer(self.learning_rate)
             else:
                 self.opt = tf.train.AdamOptimizer(self.learning_rate, beta1=0.0)
-        init = tf.random_normal_initializer()
+        init = tf.random_normal_initializer(0.0, 0.1)
 
         self._init_inputs()
 
@@ -77,6 +77,7 @@ class AbstractKBScoringModel:
                                                                                 tf.constant_initializer(0.0), False),
                                                   train_params)
                     self._loss = tf.get_variable("acc_loss", (), tf.float32, tf.constant_initializer(0.0), False)
+                    # We abuse the gradient descent optimizer for accumulating gradients and loss (summing)
                     acc_opt = tf.train.GradientDescentOptimizer(-1.0)
                     self._accumulate_gradients = acc_opt.apply_gradients(zip(self._grads, self._acc_gradients))
                     self._acc_loss = acc_opt.apply_gradients([(loss, self._loss)])
@@ -93,7 +94,7 @@ class AbstractKBScoringModel:
                 l2 = tf.reduce_sum(array_ops.pack([tf.nn.l2_loss(t) for t in train_params]))
                 l2_loss = l2_lambda * l2
                 if is_batch_training:
-                    l2_grads = tf.gradients(l2_loss, train_params, self.training_weight)
+                    l2_grads = tf.gradients(l2_loss, train_params)
                     self._l2_accumulate_gradients = acc_opt.apply_gradients(zip(l2_grads, self._acc_gradients))
                     self._l2_acc_loss = acc_opt.apply_gradients([(l2_loss, self._loss)])
                 else:
@@ -279,10 +280,11 @@ class ObservedModel(AbstractKBScoringModel):
                     self.__tuple_rels_lookup[t].append(r_i)
 
         self._rel_input = tf.placeholder(tf.int64, shape=[None], name="rel")
+        self._rel_in = np.zeros([self._batch_size], dtype=np.int64)
         self._sparse_indices_input = tf.placeholder(tf.int64, name="sparse_indices")
         self._sparse_values_input = tf.placeholder(tf.int64, name="sparse_values")
         self._shape_input = tf.placeholder(tf.int64, name="shape")
-        self._feed_dict = {self._rel_input: np.zeros([self._batch_size], dtype=np.int64)}
+        self._feed_dict = {}
 
     def _start_adding_triples(self):
         self.__sparse_indices = []
@@ -291,9 +293,8 @@ class ObservedModel(AbstractKBScoringModel):
 
     def _add_triple_to_input(self, t, j):
         (rel, subj, obj) = t
-        rel_in = self._feed_dict[self._rel_input]
         r_i = self._kb.get_id(rel, 0)
-        rel_in[j] = r_i
+        self._rel_in[j] = r_i
         s_i = self._kb.get_id(subj, 1)
         o_i = self._kb.get_id(obj, 2)
 
@@ -314,6 +315,10 @@ class ObservedModel(AbstractKBScoringModel):
         self._feed_dict[self._sparse_indices_input] = self.__sparse_indices
         self._feed_dict[self._sparse_values_input] = self.__sparse_values
         self._feed_dict[self._shape_input] = [batch_size, self.__max_cols]
+        if batch_size < self._batch_size:
+            self._feed_dict[self._rel_input] = self._rel_in[:batch_size]
+        else:
+            self._feed_dict[self._rel_input] = self._rel_in
 
     def _scoring_f(self):
         with tf.device("/cpu:0"):

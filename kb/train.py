@@ -6,6 +6,7 @@ from sampler import *
 from eval import eval_triples
 from model.models import *
 import sys
+from kb import subsample_kb
 
 
 # data loading specifics
@@ -25,8 +26,10 @@ tf.app.flags.DEFINE_integer("pos_per_batch", 100, "Number of examples in each ba
 tf.app.flags.DEFINE_integer("max_iterations", -1, "Maximum number of batches during training. -1 means until convergence")
 tf.app.flags.DEFINE_integer("ckpt_its", -1, "Number of iterations until running checkpoint. Negative means after every epoch.")
 tf.app.flags.DEFINE_integer("random_seed", 1234, "Seed for rng.")
+tf.app.flags.DEFINE_integer("subsample_kb", -1, "num of entities in subsampled kb. if <= 0 use whole kb")
 tf.app.flags.DEFINE_boolean("kb_only", False, "Only train on kb relations.")
 tf.app.flags.DEFINE_boolean("batch_train", False, "Use batch training.")
+tf.app.flags.DEFINE_boolean("type_constraint", False, "Use type constraint during sampling.")
 tf.app.flags.DEFINE_string("save_dir", "save/" + time.strftime("%d%m%Y_%H%M%S", time.localtime()),
                            "Where to save model and its configuration, always last will be kept.")
 
@@ -40,6 +43,9 @@ if FLAGS.batch_train:
 random.seed(FLAGS.random_seed)
 
 kb = load_fb15k(FLAGS.fb15k_dir, with_text=not FLAGS.kb_only)
+if FLAGS.subsample_kb > 0:
+    kb = subsample_kb(kb, FLAGS.subsample_kb)
+
 num_kb = 0
 num_text = 0
 
@@ -52,7 +58,7 @@ for f in kb.get_all_facts():
 print("Loaded data. %d kb triples. %d text_triples." % (num_kb, num_text))
 batch_size = (FLAGS.num_neg+1) * FLAGS.pos_per_batch * 2  # x2 because subject and object loss training
 
-fact_sampler = BatchNegTypeSampler(kb, FLAGS.pos_per_batch, which_set="train", neg_per_pos=FLAGS.num_neg)
+fact_sampler = BatchNegTypeSampler(kb, FLAGS.pos_per_batch, which_set="train", neg_per_pos=FLAGS.num_neg, type_constrained=FLAGS.type_constraint)
 if not FLAGS.kb_only:
     text_sampler = BatchNegTypeSampler(kb, FLAGS.pos_per_batch, which_set="train_text", neg_per_pos=FLAGS.num_neg, type_constrained=False)
 print("Created Samplers.")
@@ -62,8 +68,10 @@ os.makedirs(train_dir)
 
 i = 0
 
-subsample_validation = map(lambda x: x[0], random.sample(kb.get_all_facts_of_arity(2, "valid"), 2000))
-# subsample_validation = kb.get_all_facts_of_arity(2, "valid")
+subsample_validation = kb.get_all_facts_of_arity(2, "valid")
+if len(subsample_validation) > 1000:
+    subsample_validation = map(lambda x: x[0], random.sample(kb.get_all_facts_of_arity(2, "valid"), 1000))
+
 
 if FLAGS.ckpt_its <= 0:
     print "Setting checkpoint iteration to size of whole epoch."
@@ -124,6 +132,8 @@ with tf.Session() as sess:
             print "Epoch %d done!" % e
             if FLAGS.batch_train:
                 model.acc_l2_gradients(sess)
+                print(reduce( lambda acc,g: acc+np.linalg.norm(g), sess.run( model._acc_gradients), 0.0))
+                print(reduce( lambda acc,g: acc+np.linalg.norm(g), sess.run( tf.trainable_variables()), 0.0))
                 loss = model.update(sess)
                 model.reset_gradients_and_loss(sess)
         #    if FLAGS.l2_lambda > 0:
@@ -145,7 +155,7 @@ with tf.Session() as sess:
 
             # Run evals on development set and print their perplexity.
             print "########## Validation ##############"
-            mrr, top10 = eval_triples(sess, kb, model, subsample_validation, verbose=True)
+            mrr, top10 = 0.0, 0.0# eval_triples(sess, kb, model, subsample_validation, verbose=True)
 
             # Decrease learning rate if no improvement was seen over last 3 times.
             if len(previous_mrrs) > 2 and mrr < min(previous_mrrs[-2:]):
