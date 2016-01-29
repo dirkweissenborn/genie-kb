@@ -155,7 +155,7 @@ with tf.Session() as sess:
 
             # Run evals on development set and print their perplexity.
             print "########## Validation ##############"
-            mrr, top10 = 0.0, 0.0# eval_triples(sess, kb, model, subsample_validation, verbose=True)
+            mrr, top10 = eval_triples(sess, kb, model, subsample_validation, verbose=True)
 
             # Decrease learning rate if no improvement was seen over last 3 times.
             if len(previous_mrrs) > 2 and mrr < min(previous_mrrs[-2:]):
