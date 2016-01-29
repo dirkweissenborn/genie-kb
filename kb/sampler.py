@@ -120,38 +120,34 @@ class BatchNegTypeSampler:
 
         # sampling code is optimized; no use of remove for lists (since it is O(n))
         if position == "obj":
+            last = len(neg_candidates)-1  # index of last good candidate
             for _ in xrange(self.neg_per_pos):
                 x = None
-                i = -1
-                last = len(neg_candidates)-1
                 while not x or x == disallowed or self.kb.contains_fact(True, "train", rel, subj, x):
-                    if x:
-                        # bad candidate, remove it efficiently from candidates
-                        if i != last:
-                            neg_candidates[i] = neg_candidates[last]  # copy last good candidate to position i
-                        last -= 1  # last candidate is bad
-                        if last == -1:
-                            neg_candidates = list(allowed)  # fallback
-                            last = len(neg_candidates) - 1
                     i = random.randint(0, last)
                     x = neg_candidates[i]
+                    # remove candidate efficiently from candidates
+                    if i != last:
+                        neg_candidates[i] = neg_candidates[last]  # copy last good candidate to position i
+                    last -= 1  # last candidate is bad
+                    if last == -1:
+                        neg_candidates = list(allowed)  # fallback
+                        last = len(neg_candidates) - 1
                 neg_triples.append((rel, subj, x))
         else:
+            last = len(neg_candidates)-1  # index of last good candidate
             for _ in xrange(self.neg_per_pos):
                 x = None
-                i = -1
-                last = len(neg_candidates)-1  # index of last good candidate
                 while not x or x == disallowed or self.kb.contains_fact(True, "train", rel, x, obj):
-                    if x:
-                        # bad candidate, remove it efficiently from candidates
-                        if i != last:
-                            neg_candidates[i] = neg_candidates[last]  # copy last good candidate to position i
-                        last -= 1  # last candidate is bad
-                        if last == -1:
-                            neg_candidates = list(allowed)  # fallback
-                            last = len(neg_candidates) - 1
                     i = random.randint(0, last)
                     x = neg_candidates[i]
+                    # remove candidate efficiently from candidates
+                    if i != last:
+                        neg_candidates[i] = neg_candidates[last]  # copy last good candidate to position i
+                    last -= 1  # last candidate is bad
+                    if last == -1:
+                        neg_candidates = list(allowed)  # fallback
+                        last = len(neg_candidates) - 1
                 neg_triples.append((rel, x, obj))
 
         return neg_triples
