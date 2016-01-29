@@ -99,7 +99,7 @@ with tf.Session() as sess:
 
         loss += model.step(sess, pos, negs, mode)
 
-        if not FLAGS.kb_only:
+        if False and not FLAGS.kb_only:
             sess.run(model.training_weight.assign(FLAGS.tau))
             n = (num_text/num_kb)
             for i in xrange(n):
@@ -131,17 +131,17 @@ with tf.Session() as sess:
         #        sess.run(model.l2_update)
 
         if i % FLAGS.ckpt_its == 0:
-            print ""
-            print "%d%% done in epoch." % ((i*100)/fact_sampler.epoch_size)
+            if not FLAGS.batch_train:
+                print ""
+                print "%d%% done in epoch." % ((i*100)/fact_sampler.epoch_size)
             # Print statistics for the previous epoch.
-            loss = loss / FLAGS.ckpt_its
-            step_time = step_time / FLAGS.ckpt_its
+            loss /= FLAGS.ckpt_its
+            step_time /= FLAGS.ckpt_its
             print "global step %d learning rate %.4f step-time %.3f loss %.4f" % (model.global_step.eval(),
                                                                                   model.learning_rate.eval(),
                                                                                   step_time, loss)
             step_time, loss = 0.0, 0.0
             valid_loss = 0.0
-            count = 0
 
             # Run evals on development set and print their perplexity.
             print "########## Validation ##############"

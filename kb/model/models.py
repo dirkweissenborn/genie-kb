@@ -37,20 +37,12 @@ class AbstractKBScoringModel:
                 self.opt = rprop.RPropOptimizer()  # tf.train.GradientDescentOptimizer(self.learning_rate)
             else:
                 self.opt = tf.train.AdamOptimizer(self.learning_rate, beta1=0.0)
-        init = tf.random_uniform_initializer(-0.1, 0.1)
+        init = tf.random_normal_initializer()
 
-        self.rel_input = tf.placeholder(tf.int64, shape=[None], name="rel")
-        self.subj_input = tf.placeholder(tf.int64, shape=[None], name="subj")
-        self.obj_input = tf.placeholder(tf.int64, shape=[None], name="obj")
-        self.tuple_input = tf.placeholder(tf.int64, shape=[None], name="tuple")
-
-        self._feed_dict = {self.rel_input: np.zeros([batch_size], dtype=np.int64),
-                           self.subj_input: np.zeros([batch_size], dtype=np.int64),
-                           self.obj_input: np.zeros([batch_size], dtype=np.int64),
-                           self.tuple_input: np.zeros([batch_size], dtype=np.int64)}
+        self._init_inputs()
 
         with vs.variable_scope("score", initializer=init):
-            self._scores = self._scoring_f(self.rel_input, self.subj_input, self.obj_input, self.tuple_input)
+            self._scores = self._scoring_f()
 
         if is_train or is_batch_training:
             assert batch_size % (num_neg+1) == 0, "Batch size must be multiple of num_neg+1 during training"
@@ -85,7 +77,7 @@ class AbstractKBScoringModel:
                                                                                 tf.constant_initializer(0.0), False),
                                                   train_params)
                     self._loss = tf.get_variable("acc_loss", (), tf.float32, tf.constant_initializer(0.0), False)
-                    acc_opt = tf.train.GradientDescentOptimizer(1.0)
+                    acc_opt = tf.train.GradientDescentOptimizer(-1.0)
                     self._accumulate_gradients = acc_opt.apply_gradients(zip(self._grads, self._acc_gradients))
                     self._acc_loss = acc_opt.apply_gradients([(loss, self._loss)])
 
@@ -110,7 +102,7 @@ class AbstractKBScoringModel:
         self.saver = tf.train.Saver(tf.all_variables())
 
 
-    def _scoring_f(self, rel, subj, obj, tup):
+    def _scoring_f(self):
         """
         :param rel indices of relation(s)
         :param subj indices of subjects(s)
@@ -119,36 +111,52 @@ class AbstractKBScoringModel:
         """
         return tf.constant(np.ones([self._batch_size], dtype=np.float32), name="dummy_score", dtype=tf.float32)
 
+    def _init_inputs(self):
+        self._rel_input = tf.placeholder(tf.int64, shape=[None], name="rel")
+        self._subj_input = tf.placeholder(tf.int64, shape=[None], name="subj")
+        self._obj_input = tf.placeholder(tf.int64, shape=[None], name="obj")
+        self._subj_in = np.zeros([self._batch_size], dtype=np.int64)
+        self._obj_in = np.zeros([self._batch_size], dtype=np.int64)
+        self._rel_in = np.zeros([self._batch_size], dtype=np.int64)
+        self._feed_dict = {}
+
+    def _start_adding_triples(self):
+        pass
+
+    def _add_triple_to_input(self, t, j):
+        (rel, subj, obj) = t
+
+        self._rel_in[j] = self._kb.get_id(rel, 0)
+        self._subj_in[j] = self._kb.get_id(subj, 1)
+        self._obj_in[j] = self._kb.get_id(obj, 2)
+
+    def _finish_adding_triples(self, batch_size):
+        if batch_size < self._batch_size:
+            self._feed_dict[self._subj_input] = self._subj_in[:batch_size]
+            self._feed_dict[self._obj_input] = self._obj_in[:batch_size]
+            self._feed_dict[self._rel_input] = self._rel_in[:batch_size]
+        else:
+            self._feed_dict[self._subj_input] = self._subj_in
+            self._feed_dict[self._obj_input] = self._obj_in
+            self._feed_dict[self._rel_input] = self._rel_in
+
+    def _get_feed_dict(self):
+        return self._feed_dict
+
     def score_triples(self, sess, triples):
         i = 0
-        subj_in = self._feed_dict[self.subj_input]
-        obj_in = self._feed_dict[self.obj_input]
-        rel_in = self._feed_dict[self.rel_input]
-        tuple_in = self._feed_dict[self.tuple_input]
-        feed_dict = self._feed_dict
-        subj_in *= 0
-        obj_in *= 0
-        rel_in *= 0
-
         result = np.zeros([len(triples)])
         while i < len(triples):
-            if self._batch_size > len(triples)-i:
-                subj_in = np.zeros(len(triples)-i, dtype=np.int64)
-                obj_in = np.zeros(len(triples)-i, dtype=np.int64)
-                rel_in = np.zeros(len(triples)-i, dtype=np.int64)
-                feed_dict = {self.subj_input: subj_in, self.obj_input: obj_in, self.rel_input: rel_in}
-
-            for j in xrange(min(self._batch_size, len(triples)-i)):
-                (rel, subj, obj) = triples[i+j]
-                rel_in[j] = self._kb.get_id(rel, 0)
-                subj_in[j] = self._kb.get_id(subj, 1)
-                obj_in[j] = self._kb.get_id(obj, 2)
-                tuple_in[j] = self.tuple_ids.get((subj, obj), 0)
+            batch_size = min(self._batch_size, len(triples)-i)
+            self._start_adding_triples()
+            for j in xrange(batch_size):
+                self._add_triple_to_input(triples[i+j], j)
+            self._finish_adding_triples(batch_size)
 
             if i+self._batch_size < len(triples):
-                result[i:i+self._batch_size] = sess.run(self._scores, feed_dict=feed_dict)
+                result[i:i+self._batch_size] = sess.run(self._scores, feed_dict=self._get_feed_dict())
             else:
-                result[i:len(triples)] = sess.run(self._scores, feed_dict=feed_dict)
+                result[i:len(triples)] = sess.run(self._scores, feed_dict=self._get_feed_dict())
 
             i += self._batch_size
 
@@ -167,39 +175,30 @@ class AbstractKBScoringModel:
         assert len(pos_triples) + reduce(lambda acc, x: acc+len(x), neg_triples, 0) == self._batch_size, \
             "batch_size and provided batch do not fit"
 
-        subj_in = self._feed_dict[self.subj_input]
-        obj_in = self._feed_dict[self.obj_input]
-        rel_in = self._feed_dict[self.rel_input]
-        subj_in *= 0
-        obj_in *= 0
-        rel_in *= 0
-
-        def add_triple(t, j):
-            (rel, subj, obj) = t
-            rel_in[j] = self._kb.get_id(rel, 0)
-            subj_in[j] = self._kb.get_id(subj, 1)
-            obj_in[j] = self._kb.get_id(obj, 2)
-
         j = 0
+        self._start_adding_triples()
         for pos, negs in zip(pos_triples, neg_triples):
-            add_triple(pos, j)
+            self._add_triple_to_input(pos, j)
             j += 1
             for neg in negs:
-                add_triple(neg, j)
+                self._add_triple_to_input(neg, j)
                 j += 1
+
+        self._finish_adding_triples(j)
+
         if mode == "loss":
-            return sess.run(self._loss, feed_dict=self._feed_dict)
+            return sess.run(self._loss, feed_dict=self._get_feed_dict())
         elif mode == "accumulate":
             assert self._is_batch_training, "accumulate only possible during batch training."
-            sess.run([self._accumulate_gradients, self._acc_loss], feed_dict=self._feed_dict)
+            sess.run([self._accumulate_gradients, self._acc_loss], feed_dict=self._get_feed_dict())
             return 0.0
         else:
             assert self._is_train or self._is_batch_training, "training only possible in training state."
-            return sess.run([self._loss, self._update], feed_dict=self._feed_dict)[0]
+            return sess.run([self._loss, self._update], feed_dict=self._get_feed_dict())[0]
 
     def acc_l2_gradients(self, sess):
         assert self._is_batch_training, "acc_l2_gradients only possible during batch training."
-        if self._l2_accumulate_gradients:
+        if hasattr(self, "_l2_accumulate_gradients"):
             return sess.run([self._l2_accumulate_gradients, self._l2_acc_loss])
 
     def reset_gradients_and_loss(self, sess):
@@ -213,15 +212,15 @@ class AbstractKBScoringModel:
 
 class DistMult(AbstractKBScoringModel):
 
-    def _scoring_f(self, rel, subj, obj, tup):
+    def _scoring_f(self):
         with tf.device("/cpu:0"):
             E_subjs = tf.get_variable("E_s", [len(self._kb.get_symbols(1)), self._size])
             E_objs = tf.get_variable("E_o", [len(self._kb.get_symbols(2)), self._size])
             E_rels = tf.get_variable("E_r", [len(self._kb.get_symbols(0)), self._size])
 
-        self.e_subj = tf.tanh(tf.nn.embedding_lookup(E_subjs, subj))
-        self.e_obj = tf.tanh(tf.nn.embedding_lookup(E_objs, obj))
-        self.e_rel = tf.tanh(tf.nn.embedding_lookup(E_rels, rel))
+        self.e_subj = tf.tanh(tf.nn.embedding_lookup(E_subjs, self._subj_input))
+        self.e_obj = tf.tanh(tf.nn.embedding_lookup(E_objs, self._obj_input))
+        self.e_rel = tf.tanh(tf.nn.embedding_lookup(E_rels, self._rel_input))
         s_o_prod = self.e_obj * self.e_subj
 
         score = tf_util.dot(self.e_rel, s_o_prod)
@@ -241,15 +240,15 @@ class DistMult(AbstractKBScoringModel):
 
 class ModelE(AbstractKBScoringModel):
 
-    def _scoring_f(self, rel, subj, obj, tup):
+    def _scoring_f(self):
         E_subjs = tf.get_variable("E_s", [len(self._kb.get_symbols(1)), self._size])
         E_objs = tf.get_variable("E_o", [len(self._kb.get_symbols(2)), self._size])
         E_rels_s = tf.get_variable("E_r_s", [len(self._kb.get_symbols(0)), self._size])
         E_rels_o = tf.get_variable("E_r_o", [len(self._kb.get_symbols(0)), self._size])
-        self.e_subj = tf.nn.embedding_lookup(E_subjs, subj)
-        self.e_obj = tf.nn.embedding_lookup(E_objs, obj)
-        self.e_rel_s = tf.nn.embedding_lookup(E_rels_s, rel)
-        self.e_rel_o = tf.nn.embedding_lookup(E_rels_o, rel)
+        self.e_subj = tf.nn.embedding_lookup(E_subjs, self._subj_input)
+        self.e_obj = tf.nn.embedding_lookup(E_objs, self._obj_input)
+        self.e_rel_s = tf.nn.embedding_lookup(E_rels_s, self._rel_input)
+        self.e_rel_o = tf.nn.embedding_lookup(E_rels_o, self._rel_input)
 
         score = tf_util.dot(self.e_rel_s, self.e_subj) + tf_util.dot(self.e_rel_o, self.e_obj)
 
@@ -258,13 +257,75 @@ class ModelE(AbstractKBScoringModel):
 
 class ObservedModel(AbstractKBScoringModel):
 
-    def _scoring_f(self, rel, subj, obj, tup):
-        with tf.device("/cpu:0"):
-           E_rels = tf.get_variable("E_r", [len(self._kb.get_symbols(0)), self._size])
-
-        rels = [[] for _ in self.tuple_ids.iterkeys()]
+    def _init_inputs(self):
+        self.__num_relations = len(self._kb.get_symbols(0))
+        # create tuple to rel lookup
+        self.__tuple_rels_lookup = dict()
         for (rel, subj, obj), _, typ in self._kb.get_all_facts():
-            tup_id = self.tuple_ids.get(subj, obj)
-            rels[tup_id].append(self._kb.get_id(rel, 2))
+            if typ.startswith("train"):
+                s_i = self._kb.get_id(subj, 1)
+                o_i = self._kb.get_id(obj, 2)
+                r_i = self._kb.get_id(rel, 0)
+                t = (s_i, o_i)
+                if t not in self.__tuple_rels_lookup:
+                    self.__tuple_rels_lookup[t] = [r_i]
+                else:
+                    self.__tuple_rels_lookup[t].append(r_i)
+                r_i += self.__num_relations  # inverse relation
+                t = (o_i, s_i)
+                if t not in self.__tuple_rels_lookup:
+                    self.__tuple_rels_lookup[t] = [r_i]
+                else:
+                    self.__tuple_rels_lookup[t].append(r_i)
+
+        self._rel_input = tf.placeholder(tf.int64, shape=[None], name="rel")
+        self._sparse_indices_input = tf.placeholder(tf.int64, name="sparse_indices")
+        self._sparse_values_input = tf.placeholder(tf.int64, name="sparse_values")
+        self._shape_input = tf.placeholder(tf.int64, name="shape")
+        self._feed_dict = {self._rel_input: np.zeros([self._batch_size], dtype=np.int64)}
+
+    def _start_adding_triples(self):
+        self.__sparse_indices = []
+        self.__sparse_values = []
+        self.__max_cols = 1
+
+    def _add_triple_to_input(self, t, j):
+        (rel, subj, obj) = t
+        rel_in = self._feed_dict[self._rel_input]
+        r_i = self._kb.get_id(rel, 0)
+        rel_in[j] = r_i
+        s_i = self._kb.get_id(subj, 1)
+        o_i = self._kb.get_id(obj, 2)
+
+        rels = self.__tuple_rels_lookup.get((s_i, o_i))
+        if rels:
+            for i in xrange(len(rels)):
+                if rels[i] != r_i:
+                    self.__sparse_indices.append([j, i])
+                    self.__sparse_values.append(rels[i])
+            self.__max_cols = max(self.__max_cols, len(rels) + 1)
+            # default relation
+            self.__sparse_indices.append([j, len(rels)])
+        else:
+            self.__sparse_indices.append([j, 0])
+        self.__sparse_values.append(2*self.__num_relations)
+
+    def _finish_adding_triples(self, batch_size):
+        self._feed_dict[self._sparse_indices_input] = self.__sparse_indices
+        self._feed_dict[self._sparse_values_input] = self.__sparse_values
+        self._feed_dict[self._shape_input] = [batch_size, self.__max_cols]
+
+    def _scoring_f(self):
+        with tf.device("/cpu:0"):
+           E_rels = tf.get_variable("E_r", [2*self.__num_relations+1, self._size])  # rels + inv rels + default rel
+
+        self.e_rel = tf.tanh(tf.nn.embedding_lookup(E_rels, self._rel_input))
+        # weighted sum of tuple rel embeddings
+        sparse_tensor = tf.SparseTensor(self._sparse_indices_input, self._sparse_values_input, self._shape_input)
+        self.e_tuple_rels = tf.tanh(tf.nn.embedding_lookup_sparse(E_rels, sparse_tensor, None))
+
+        return tf_util.dot(self.e_rel, self.e_tuple_rels)
+
+
 
 

@@ -25,10 +25,11 @@ def rank_triple(sess, kb, model, triple, position="obj"):
 def eval_triples(sess, kb, model, triples, position="both", verbose=False):
     top10 = 0.0
     rec_rank = 0.0
-
+    total = len(triples)
     ct = 0.0
-
+    i = 0
     for triple in triples:
+        i += 1
         if position == "both":
             rank_s, _ = rank_triple(sess, kb, model, triple, "subj")
             rank_o, _ = rank_triple(sess, kb, model, triple, "obj")
@@ -47,7 +48,7 @@ def eval_triples(sess, kb, model, triples, position="both", verbose=False):
             ct += 1.0
         if verbose:
             if ct % 10 == 0:
-                sys.stdout.write("\r%.1f%%, mrr: %.3f, top10: %.3f" % (ct*100.0 / total, rec_rank / ct, top10 / ct))
+                sys.stdout.write("\r%.1f%%, mrr: %.3f, top10: %.3f" % (i*100.0 / total, rec_rank / ct, top10 / ct))
                 sys.stdout.flush()
 
     print ""
