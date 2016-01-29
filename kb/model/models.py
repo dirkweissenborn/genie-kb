@@ -24,7 +24,6 @@ class AbstractKBScoringModel:
                 if tup not in self.tuple_ids:
                     self.tuple_ids[tup] = len(self.tuple_ids)
 
-
         self._kb = kb
         self._size = size
         self._batch_size = batch_size

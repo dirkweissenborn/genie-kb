@@ -22,28 +22,38 @@ def rank_triple(sess, kb, model, triple, position="obj"):
     return rank, ix
 
 
-def eval_triples(sess, kb, model, triples, position="obj", verbose=False):
-    total = len(triples)
+def eval_triples(sess, kb, model, triples, position="both", verbose=False):
     top10 = 0.0
     rec_rank = 0.0
 
     ct = 0.0
 
     for triple in triples:
-        rank, _ = rank_triple(sess, kb, model, triple, position)
-        rec_rank += 1.0 / rank
-        if rank <= 10:
-            top10 += 1
-        if verbose:
+        if position == "both":
+            rank_s, _ = rank_triple(sess, kb, model, triple, "subj")
+            rank_o, _ = rank_triple(sess, kb, model, triple, "obj")
+            rec_rank += 1.0/rank_s
+            rec_rank += 1.0/rank_o
+            if rank_s <= 10:
+                top10 += 1
+            if rank_o <= 10:
+                top10 += 1
+            ct += 2.0
+        else:
+            rank, _ = rank_triple(sess, kb, model, triple, position)
+            rec_rank += 1.0 / rank
+            if rank <= 10:
+                top10 += 1
             ct += 1.0
+        if verbose:
             if ct % 10 == 0:
                 sys.stdout.write("\r%.1f%%, mrr: %.3f, top10: %.3f" % (ct*100.0 / total, rec_rank / ct, top10 / ct))
                 sys.stdout.flush()
 
     print ""
 
-    mrr = rec_rank / total
-    top10 /= total
+    mrr = rec_rank / ct
+    top10 /= ct
 
     if verbose:
         print "MRR: %.3f" % mrr
