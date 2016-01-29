@@ -1,5 +1,6 @@
 import random
 from multiprocessing.dummy import Pool
+import multiprocessing
 
 
 class BatchNegTypeSampler:
@@ -14,6 +15,9 @@ class BatchNegTypeSampler:
         self.epoch_size = self.num_facts / self.pos_per_batch
         self.reset()
         self.__pool = Pool()
+
+        self._objs = list(self.kb.get_symbols(2))
+        self._subjs = list(self.kb.get_symbols(1))
 
         # we use sampling with type constraints
         if type_constrained:
@@ -106,15 +110,9 @@ class BatchNegTypeSampler:
                 for c in self.rel_args[typ]:
                     if c != disallowed and c in allowed:
                         neg_candidates.add(c)
-
-            while len(neg_candidates) < self.neg_per_pos:  # sample random
-                cs = random.sample(allowed, self.neg_per_pos-len(neg_candidates))
-                for c in cs:
-                    if c != disallowed and c in allowed:
-                        neg_candidates.add(c)
+            neg_candidates = list(neg_candidates)
         else:  # sample from all candidates
-            neg_candidates = allowed
-        neg_candidates = list(neg_candidates)
+            neg_candidates = self._objs if position == "obj" else self._subjs
 
         neg_triples = list()
 
@@ -126,13 +124,14 @@ class BatchNegTypeSampler:
                 while not x or x == disallowed or self.kb.contains_fact(True, "train", rel, subj, x):
                     i = random.randint(0, last)
                     x = neg_candidates[i]
-                    # remove candidate efficiently from candidates
-                    if i != last:
-                        neg_candidates[i] = neg_candidates[last]  # copy last good candidate to position i
-                    last -= 1  # last candidate is bad
-                    if last == -1:
-                        neg_candidates = list(allowed)  # fallback
-                        last = len(neg_candidates) - 1
+                    if neg_candidates != self._objs:  # do not change self._objs, accidental doubles are very rare
+                        # remove candidate efficiently from candidates
+                        if i != last:
+                            neg_candidates[i] = neg_candidates[last]  # copy last good candidate to position i
+                        last -= 1
+                        if last == -1:
+                            neg_candidates = self._objs  # fallback
+                            last = len(neg_candidates) - 1
                 neg_triples.append((rel, subj, x))
         else:
             last = len(neg_candidates)-1  # index of last good candidate
@@ -142,12 +141,13 @@ class BatchNegTypeSampler:
                     i = random.randint(0, last)
                     x = neg_candidates[i]
                     # remove candidate efficiently from candidates
-                    if i != last:
-                        neg_candidates[i] = neg_candidates[last]  # copy last good candidate to position i
-                    last -= 1  # last candidate is bad
-                    if last == -1:
-                        neg_candidates = list(allowed)  # fallback
-                        last = len(neg_candidates) - 1
+                    if neg_candidates != self._subjs:  # do not change self._subjs
+                        if i != last:
+                            neg_candidates[i] = neg_candidates[last]  # copy last good candidate to position i
+                        last -= 1
+                        if last == -1:
+                            neg_candidates = self._subjs # fallback
+                            last = len(neg_candidates) - 1
                 neg_triples.append((rel, x, obj))
 
         return neg_triples
@@ -159,24 +159,27 @@ class BatchNegTypeSampler:
         pos_idx = self.todo_facts[0:self.pos_per_batch]
         self.count += 1
         self.todo_facts = self.todo_facts[self.pos_per_batch::]
-        pos = [self.facts[i] for i in pos_idx]
+        if position == "both":
+            pos = [self.facts[pos_idx[i % self.pos_per_batch]] for i in xrange(self.pos_per_batch*2)]
+        else:
+            pos = [self.facts[i] for i in pos_idx]
 
-        negs = []
-        pos_ret = []
-        if position == "both" or position == "obj":
-            n = self.__pool.map(lambda fact: self.__get_neg_examples(fact, "obj"), pos)
-            negs.extend(n)
-            pos_ret.extend(pos)
+        if position == "both":
+            negs = self.__pool.map(
+                lambda i: self.__get_neg_examples(pos[i], "obj") if i < self.pos_per_batch else
+                self.__get_neg_examples(pos[i], "subj"),
+                xrange(self.pos_per_batch*2))
 
-        if position == "both" or position == "subj":
-            n = self.__pool.map(lambda fact: self.__get_neg_examples(fact, "subj"), pos)
-            negs.extend(n)
-            pos_ret.extend(pos)
+        if position == "subj":
+            negs = self.__pool.map(lambda fact: self.__get_neg_examples(fact, "subj"), pos)
 
-        return pos_ret, negs
+        if position == "obj":
+            negs = self.__pool.map(lambda fact: self.__get_neg_examples(fact, "obj"), pos)
+
+        return pos, negs
 
     def get_batch_async(self, position="both"):
-        return self.__pool.apply_async(self.get_batch, (position))
+        return self.__pool.apply_async(self.get_batch, (position,))
 
     def get_epoch(self):
         return self.count / float(self.num_facts)
