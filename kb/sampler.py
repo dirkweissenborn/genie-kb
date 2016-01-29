@@ -161,7 +161,7 @@ class BatchNegTypeSampler:
             pos_ret.extend(pos)
 
         if position == "both" or position == "subj":
-            n = map(lambda fact: self.__get_neg_examples(fact, "subj"), pos)
+            n = self.__pool.map(lambda fact: self.__get_neg_examples(fact, "subj"), pos)
             negs.extend(n)
             pos_ret.extend(pos)
 
