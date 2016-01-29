@@ -20,7 +20,7 @@ tf.app.flags.DEFINE_float("l2_lambda", 0, "L2-regularization rate.")
 tf.app.flags.DEFINE_float("tau", 0.1, "Text triple weight.")
 tf.app.flags.DEFINE_float("learning_rate_decay", 0.5, "Learning rate decay when loss on validation set does not improve.")
 tf.app.flags.DEFINE_integer("num_neg", 200, "Number of negative examples for training.")
-tf.app.flags.DEFINE_integer("num_batch_examples", 100, "Number of examples in each batch for training.")
+tf.app.flags.DEFINE_integer("pos_per_batch", 100, "Number of examples in each batch for training.")
 tf.app.flags.DEFINE_integer("max_iterations", -1, "Maximum number of batches during training. -1 means until convergence")
 tf.app.flags.DEFINE_integer("ckpt_its", -1, "Number of iterations until running checkpoint. Negative means after every epoch.")
 tf.app.flags.DEFINE_integer("random_seed", 1234, "Seed for rng.")
@@ -49,11 +49,11 @@ for f in kb.get_all_facts():
         num_text += 1
 
 print("Loaded data. %d kb triples. %d text_triples." % (num_kb, num_text))
-batch_size = (FLAGS.num_neg+1) * FLAGS.num_batch_examples * 2 # x2 because subject and object loss training
+batch_size = (FLAGS.num_neg+1) * FLAGS.pos_per_batch * 2  # x2 because subject and object loss training
 
-fact_sampler = BatchNegTypeSampler(kb, batch_size, which_set="train", neg_per_pos=FLAGS.num_neg)
+fact_sampler = BatchNegTypeSampler(kb, FLAGS.pos_per_batch, which_set="train", neg_per_pos=FLAGS.num_neg)
 if not FLAGS.kb_only:
-    text_sampler = BatchNegTypeSampler(kb, batch_size, which_set="train_text", neg_per_pos=FLAGS.num_neg, type_constrained=False)
+    text_sampler = BatchNegTypeSampler(kb, FLAGS.pos_per_batch, which_set="train_text", neg_per_pos=FLAGS.num_neg, type_constrained=False)
 print("Created Samplers.")
 
 train_dir = os.path.join(FLAGS.save_dir, "train")

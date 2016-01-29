@@ -59,6 +59,8 @@ if __name__ == "__main__":
 
     # data loading specifics
     tf.app.flags.DEFINE_string('fb15k_dir', None, 'data dir containing files of fb15k dataset')
+    # model parameters
+    tf.app.flags.DEFINE_integer('size', 10, 'num of models hidden dim')
 
     # Evaluation
     tf.app.flags.DEFINE_string("model_path", None, "Path to trained model.")
@@ -70,7 +72,7 @@ if __name__ == "__main__":
     print("Loaded data.")
 
     with tf.Session() as sess:
-        model = DistMult(kb, 10, FLAGS.batch_size, is_train=False)
+        model = DistMult(kb, FLAGS.size, FLAGS.batch_size, is_train=False)
         model.saver.restore(sess, os.path.join(FLAGS.model_path))
         print("Loaded model.")
 
