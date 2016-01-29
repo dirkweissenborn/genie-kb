@@ -49,7 +49,7 @@ for f in kb.get_all_facts():
         num_text += 1
 
 print("Loaded data. %d kb triples. %d text_triples." % (num_kb, num_text))
-batch_size = (FLAGS.num_neg+1) * FLAGS.num_batch_examples
+batch_size = (FLAGS.num_neg+1) * FLAGS.num_batch_examples * 2 # x2 because subject and object loss training
 
 fact_sampler = BatchNegTypeSampler(kb, batch_size, which_set="train", neg_per_pos=FLAGS.num_neg)
 if not FLAGS.kb_only:
@@ -87,8 +87,7 @@ with tf.Session() as sess:
         start_time = time.time()
 
         pos, negs = fact_sampler.get_batch()
-        l = model.step(sess, pos, negs, mode)
-        loss += l
+        loss += model.step(sess, pos, negs, mode)
 
         if not FLAGS.kb_only:
             sess.run(model.training_weight.assign(FLAGS.tau))

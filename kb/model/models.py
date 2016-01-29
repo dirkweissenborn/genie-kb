@@ -14,9 +14,19 @@ def _clip_by_value(gradients, min_value, max_value):
 
 class AbstractKBScoringModel:
 
-    def __init__(self, kb, batch_size, is_train=True, num_neg=200, learning_rate=1e-2, max_grad=5, l2_lambda=0.0,
-                 is_batch_training=False):
+    def __init__(self, kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2, max_grad=5, l2_lambda=0.0,
+                 is_batch_training=False, which_sets={"train", "train_text"}):
+
+        self.tuple_ids = dict()
+        for (rel, subj, obj), _, typ in kb.get_all_facts():
+            if typ in which_sets:
+                tup = (subj, obj)
+                if tup not in self.tuple_ids:
+                    self.tuple_ids[tup] = len(self.tuple_ids)
+
+
         self._kb = kb
+        self._size = size
         self._batch_size = batch_size
         self._is_batch_training = is_batch_training
         self._is_train = is_train
@@ -33,13 +43,15 @@ class AbstractKBScoringModel:
         self.rel_input = tf.placeholder(tf.int64, shape=[None], name="rel")
         self.subj_input = tf.placeholder(tf.int64, shape=[None], name="subj")
         self.obj_input = tf.placeholder(tf.int64, shape=[None], name="obj")
+        self.tuple_input = tf.placeholder(tf.int64, shape=[None], name="tuple")
 
         self._feed_dict = {self.rel_input: np.zeros([batch_size], dtype=np.int64),
                            self.subj_input: np.zeros([batch_size], dtype=np.int64),
-                           self.obj_input: np.zeros([batch_size], dtype=np.int64)}
+                           self.obj_input: np.zeros([batch_size], dtype=np.int64),
+                           self.tuple_input: np.zeros([batch_size], dtype=np.int64)}
 
         with vs.variable_scope("score", initializer=init):
-            self._scores = self._scoring_f(self.rel_input, self.subj_input, self.obj_input)
+            self._scores = self._scoring_f(self.rel_input, self.subj_input, self.obj_input, self.tuple_input)
 
         if is_train or is_batch_training:
             assert batch_size % (num_neg+1) == 0, "Batch size must be multiple of num_neg+1 during training"
@@ -99,7 +111,7 @@ class AbstractKBScoringModel:
         self.saver = tf.train.Saver(tf.all_variables())
 
 
-    def _scoring_f(self, rel, subj, obj):
+    def _scoring_f(self, rel, subj, obj, tup):
         """
         :param rel indices of relation(s)
         :param subj indices of subjects(s)
@@ -113,6 +125,7 @@ class AbstractKBScoringModel:
         subj_in = self._feed_dict[self.subj_input]
         obj_in = self._feed_dict[self.obj_input]
         rel_in = self._feed_dict[self.rel_input]
+        tuple_in = self._feed_dict[self.tuple_input]
         feed_dict = self._feed_dict
         subj_in *= 0
         obj_in *= 0
@@ -131,6 +144,7 @@ class AbstractKBScoringModel:
                 rel_in[j] = self._kb.get_id(rel, 0)
                 subj_in[j] = self._kb.get_id(subj, 1)
                 obj_in[j] = self._kb.get_id(obj, 2)
+                tuple_in[j] = self.tuple_ids.get((subj, obj), 0)
 
             if i+self._batch_size < len(triples):
                 result[i:i+self._batch_size] = sess.run(self._scores, feed_dict=feed_dict)
@@ -200,21 +214,15 @@ class AbstractKBScoringModel:
 
 class DistMult(AbstractKBScoringModel):
 
-    def __init__(self, kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2, max_grad=5, l2_lambda=0.0,
-                 is_batch_training=False):
-        self._size = size
-        AbstractKBScoringModel.__init__(self, kb, batch_size, is_train, num_neg, learning_rate, max_grad,
-                                        l2_lambda=l2_lambda,is_batch_training=is_batch_training)
-
-    def _scoring_f(self, rel, subj, obj):
+    def _scoring_f(self, rel, subj, obj, tup):
         with tf.device("/cpu:0"):
             E_subjs = tf.get_variable("E_s", [len(self._kb.get_symbols(1)), self._size])
             E_objs = tf.get_variable("E_o", [len(self._kb.get_symbols(2)), self._size])
             E_rels = tf.get_variable("E_r", [len(self._kb.get_symbols(0)), self._size])
 
-        self.e_subj = tf.nn.embedding_lookup(E_subjs, subj)
-        self.e_obj = tf.nn.embedding_lookup(E_objs, obj)
-        self.e_rel = tf.nn.embedding_lookup(E_rels, rel)
+        self.e_subj = tf.tanh(tf.nn.embedding_lookup(E_subjs, subj))
+        self.e_obj = tf.tanh(tf.nn.embedding_lookup(E_objs, obj))
+        self.e_rel = tf.tanh(tf.nn.embedding_lookup(E_rels, rel))
         s_o_prod = self.e_obj * self.e_subj
 
         score = tf_util.dot(self.e_rel, s_o_prod)
@@ -232,17 +240,9 @@ class DistMult(AbstractKBScoringModel):
         return E
 
 
-
-
 class ModelE(AbstractKBScoringModel):
 
-    def __init__(self, kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2, max_grad=5, l2_lambda=0.0,
-                 is_batch_training=False):
-        self._size = size
-        AbstractKBScoringModel.__init__(self, kb, batch_size, is_train, num_neg, learning_rate, max_grad,
-                                        l2_lambda=l2_lambda,is_batch_training=is_batch_training)
-
-    def _scoring_f(self, rel, subj, obj):
+    def _scoring_f(self, rel, subj, obj, tup):
         E_subjs = tf.get_variable("E_s", [len(self._kb.get_symbols(1)), self._size])
         E_objs = tf.get_variable("E_o", [len(self._kb.get_symbols(2)), self._size])
         E_rels_s = tf.get_variable("E_r_s", [len(self._kb.get_symbols(0)), self._size])
@@ -255,3 +255,17 @@ class ModelE(AbstractKBScoringModel):
         score = tf_util.dot(self.e_rel_s, self.e_subj) + tf_util.dot(self.e_rel_o, self.e_obj)
 
         return score
+
+
+class ObservedModel(AbstractKBScoringModel):
+
+    def _scoring_f(self, rel, subj, obj, tup):
+        with tf.device("/cpu:0"):
+           E_rels = tf.get_variable("E_r", [len(self._kb.get_symbols(0)), self._size])
+
+        rels = [[] for _ in self.tuple_ids.iterkeys()]
+        for (rel, subj, obj), _, typ in self._kb.get_all_facts():
+            tup_id = self.tuple_ids.get(subj, obj)
+            rels[tup_id].append(self._kb.get_id(rel, 2))
+
+

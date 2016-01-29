@@ -1,6 +1,5 @@
 import random
 from multiprocessing.dummy import Pool
-import dill
 
 
 class BatchNegTypeSampler:
@@ -132,7 +131,7 @@ class BatchNegTypeSampler:
         return neg_triples
 
     # @profile
-    def get_batch(self, position="obj"):
+    def get_batch(self, position="both"):
         if self.end_of_epoch():
             self.reset()
         pos_idx = self.todo_facts[0:self.pos_per_batch]
@@ -140,9 +139,17 @@ class BatchNegTypeSampler:
         self.todo_facts = self.todo_facts[self.pos_per_batch::]
         pos = [self.facts[i] for i in pos_idx]
 
-        neg = self.__pool.map(lambda fact: self.__get_neg_examples(fact, position), pos)
+        negs = []
+        pos_ret = []
+        if position == "both" or position == "obj":
+            negs.extend(self.__pool.map(lambda fact: self.__get_neg_examples(fact, "obj"), pos))
+            pos_ret.extend(pos)
 
-        return pos, neg
+        if position == "both" or position == "subj":
+            negs.extend(self.__pool.map(lambda fact: self.__get_neg_examples(fact, "subj"), pos))
+            pos_ret.extend(pos)
+
+        return pos_ret, negs
 
     def get_epoch(self):
         return self.count / float(self.num_facts)
