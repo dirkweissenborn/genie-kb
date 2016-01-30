@@ -5,11 +5,11 @@ import multiprocessing
 
 class BatchNegTypeSampler:
 
-    def __init__(self, kb, pos_per_batch, neg_per_pos=200, which_set="train", type_constrained=True):
+    def __init__(self, kb, pos_per_batch, neg_per_pos=200, which_set="train", type_constraint=True):
         self.kb = kb
         self.pos_per_batch = pos_per_batch
         self.neg_per_pos = neg_per_pos
-        self.type_constrained = type_constrained
+        self.type_constraint = type_constraint
         self.facts = [f[0] for f in self.kb.get_all_facts() if f[2] == which_set]
         self.num_facts = len(self.facts)
         self.epoch_size = self.num_facts / self.pos_per_batch
@@ -20,7 +20,7 @@ class BatchNegTypeSampler:
         self._subjs = list(self.kb.get_symbols(1))
 
         # we use sampling with type constraints
-        if type_constrained:
+        if type_constraint:
             self.init_types()
 
     def init_types(self):
@@ -97,7 +97,7 @@ class BatchNegTypeSampler:
         allowed = self.kb.get_symbols(2) if position == "obj" else self.kb.get_symbols(1)
         disallowed = obj if position == "obj" else subj
 
-        if self.type_constrained:
+        if self.type_constraint:
             #sample by type
             neg_candidates = set()
             typs = self.rel_types[rel+"_o"] if position == "obj" else self.rel_types[rel+"_s"]
@@ -124,7 +124,7 @@ class BatchNegTypeSampler:
                 while not x or x == disallowed or self.kb.contains_fact(True, "train", rel, subj, x):
                     i = random.randint(0, last)
                     x = neg_candidates[i]
-                    if neg_candidates != self._objs:  # do not change self._objs, accidental doubles are very rare
+                    if neg_candidates is not self._objs:  # do not change self._objs, accidental doubles are very rare
                         # remove candidate efficiently from candidates
                         if i != last:
                             neg_candidates[i] = neg_candidates[last]  # copy last good candidate to position i
@@ -141,7 +141,7 @@ class BatchNegTypeSampler:
                     i = random.randint(0, last)
                     x = neg_candidates[i]
                     # remove candidate efficiently from candidates
-                    if neg_candidates != self._subjs:  # do not change self._subjs
+                    if neg_candidates is not self._subjs:  # do not change self._subjs
                         if i != last:
                             neg_candidates[i] = neg_candidates[last]  # copy last good candidate to position i
                         last -= 1
