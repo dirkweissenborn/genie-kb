@@ -92,7 +92,6 @@ with tf.Session() as sess:
         mode = "accumulate"
 
     next_batch = fact_sampler.get_batch_async()
-    sample_time = 0.0
     while FLAGS.max_iterations < 0 or i < FLAGS.max_iterations:
         i += 1
         start_time = time.time()
@@ -103,7 +102,6 @@ with tf.Session() as sess:
             next_batch = fact_sampler.get_batch_async()
         else:
             next_batch = text_sampler.get_batch_async()
-        sample_time += (time.time() - start_time)
         loss += model.step(sess, pos, negs, mode)
         step_time += (time.time() - start_time)
 
@@ -129,6 +127,8 @@ with tf.Session() as sess:
             e += 1
             print "Epoch %d done!" % e
             if FLAGS.batch_train:
+                loss_without_l2 = sess.run(model._loss) / FLAGS.pos_per_batch / FLAGS.ckpt_its
+                print "Loss without L2 %.3f" % loss_without_l2
                 model.acc_l2_gradients(sess)
                 loss = model.update(sess)
                 model.reset_gradients_and_loss(sess)
@@ -137,19 +137,16 @@ with tf.Session() as sess:
         #        sess.run(model.l2_update)
 
         if i % FLAGS.ckpt_its == 0:
-            loss /= FLAGS.ckpt_its
             if not FLAGS.batch_train:
-                loss /= FLAGS.pos_per_batch  # loss is not normalized in batch mode, so we have to do it here
+                loss /= FLAGS.ckpt_its
                 print ""
                 print "%d%% epochs done." % (float(i)/fact_sampler.epoch_size)
             # Print statistics for the previous epoch.
             step_time /= FLAGS.ckpt_its
-            sample_time /= FLAGS.ckpt_its
             print "global step %d learning rate %.4f, step-time %.3f, loss %.4f" % (model.global_step.eval(),
                                                                                     model.learning_rate.eval(),
                                                                                     step_time, loss)
-            print "sample time %.4f" % sample_time
-            step_time, sample_time, loss = 0.0, 0.0, 0.0
+            step_time, loss = 0.0, 0.0
             valid_loss = 0.0
 
             # Run evals on development set and print their perplexity.
