@@ -58,9 +58,9 @@ for f in kb.get_all_facts():
 print("Loaded data. %d kb triples. %d text_triples." % (num_kb, num_text))
 batch_size = (FLAGS.num_neg+1) * FLAGS.pos_per_batch * 2  # x2 because subject and object loss training
 
-fact_sampler = BatchNegTypeSampler(kb, FLAGS.pos_per_batch, which_set="train", neg_per_pos=FLAGS.num_neg, type_constrained=FLAGS.type_constraint)
+fact_sampler = BatchNegTypeSampler(kb, FLAGS.pos_per_batch, which_set="train", neg_per_pos=FLAGS.num_neg, type_constraint=FLAGS.type_constraint)
 if not FLAGS.kb_only:
-    text_sampler = BatchNegTypeSampler(kb, FLAGS.pos_per_batch, which_set="train_text", neg_per_pos=FLAGS.num_neg, type_constrained=False)
+    text_sampler = BatchNegTypeSampler(kb, FLAGS.pos_per_batch, which_set="train_text", neg_per_pos=FLAGS.num_neg, type_constraint=False)
 print("Created Samplers.")
 
 train_dir = os.path.join(FLAGS.save_dir, "train")
@@ -68,9 +68,9 @@ os.makedirs(train_dir)
 
 i = 0
 
-subsample_validation = kb.get_all_facts_of_arity(2, "valid")
+subsample_validation = map(lambda x: x[0], kb.get_all_facts_of_arity(2, "valid"))
 if len(subsample_validation) > 1000:
-    subsample_validation = map(lambda x: x[0], random.sample(kb.get_all_facts_of_arity(2, "valid"), 1000))
+    subsample_validation = random.sample(subsample_validation, 1000)
 
 
 if FLAGS.ckpt_its <= 0:
@@ -92,11 +92,10 @@ with tf.Session() as sess:
         mode = "accumulate"
 
     next_batch = fact_sampler.get_batch_async()
-
+    sample_time = 0.0
     while FLAGS.max_iterations < 0 or i < FLAGS.max_iterations:
         i += 1
         start_time = time.time()
-
         pos, negs = next_batch.get()
         end_of_epoch = fact_sampler.end_of_epoch()
         # already fetch next batch parallel to running model
@@ -104,8 +103,9 @@ with tf.Session() as sess:
             next_batch = fact_sampler.get_batch_async()
         else:
             next_batch = text_sampler.get_batch_async()
-
+        sample_time += (time.time() - start_time)
         loss += model.step(sess, pos, negs, mode)
+        step_time += (time.time() - start_time)
 
         if not FLAGS.kb_only:
             sess.run(model.training_weight.assign(FLAGS.tau))
@@ -120,8 +120,6 @@ with tf.Session() as sess:
                 l = model.step(sess, pos, negs, mode)
                 loss += l
             sess.run(model.training_weight.assign(1.0))
-
-        step_time += (time.time() - start_time)
 
         sys.stdout.write("\r%.1f%%" % (float((i-1) % FLAGS.ckpt_its + 1.0)*100.0 / FLAGS.ckpt_its))
         sys.stdout.flush()
@@ -141,14 +139,16 @@ with tf.Session() as sess:
         if i % FLAGS.ckpt_its == 0:
             if not FLAGS.batch_train:
                 print ""
-                print "%d%% done in epoch." % ((i*100)/fact_sampler.epoch_size)
+                print "%d%% epochs done." % (float(i)/fact_sampler.epoch_size)
             # Print statistics for the previous epoch.
             loss /= FLAGS.ckpt_its
             step_time /= FLAGS.ckpt_its
-            print "global step %d learning rate %.4f step-time %.3f loss %.4f" % (model.global_step.eval(),
-                                                                                  model.learning_rate.eval(),
-                                                                                  step_time, loss)
-            step_time, loss = 0.0, 0.0
+            sample_time /= FLAGS.ckpt_its
+            print "global step %d learning rate %.4f, step-time %.3f, loss %.4f" % (model.global_step.eval(),
+                                                                                    model.learning_rate.eval(),
+                                                                                    step_time, loss)
+            print "sample time %.4f" % sample_time
+            step_time, sample_time, loss = 0.0, 0.0, 0.0
             valid_loss = 0.0
 
             # Run evals on development set and print their perplexity.

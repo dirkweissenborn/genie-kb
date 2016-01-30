@@ -154,12 +154,8 @@ class AbstractKBScoringModel:
                 self._add_triple_to_input(triples[i+j], j)
             self._finish_adding_triples(batch_size)
 
-            if i+self._batch_size < len(triples):
-                result[i:i+self._batch_size] = sess.run(self._scores, feed_dict=self._get_feed_dict())
-            else:
-                result[i:len(triples)] = sess.run(self._scores, feed_dict=self._get_feed_dict())
-
-            i += self._batch_size
+            result[i:i+batch_size] = sess.run(self._scores, feed_dict=self._get_feed_dict())
+            i += batch_size
 
         return result
 

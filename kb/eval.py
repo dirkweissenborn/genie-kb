@@ -2,20 +2,24 @@ import numpy as np
 import sys
 
 def rank_triple(sess, kb, model, triple, position="obj"):
-    dim = 2 if position == "obj" else 1
     (rel, subj, obj) = triple
 
-    neg_triples = filter(lambda e:
-                         not kb.contains_fact(True, "train", rel, subj, e) if position == "obj"
-                         else not kb.contains_fact(True, "train", rel, e, obj) and \
-                         not kb.contains_fact(True, "test", rel, subj, e) if position == "obj"
-                         else not kb.contains_fact(True, "test", rel, e, obj) and \
-                         not kb.contains_fact(True, "valid", rel, subj, e) if position == "obj"
-                         else not kb.contains_fact(True, "valid", rel, e, obj) ,
-                         kb.get_symbols(dim))
+    if position == "obj":
+        neg_triples = map(lambda e: (rel, subj, e), filter(lambda e:
+                                                           e != obj and
+                                                           not kb.contains_fact(True, "train", rel, subj, e) and
+                                                           not kb.contains_fact(True, "test", rel, subj, e) and
+                                                           not kb.contains_fact(True, "valid", rel, subj, e),
+                                                           kb.get_symbols(2)))
+    else:
+        neg_triples = map(lambda e: (rel, e, obj), filter(lambda e:
+                                                          e != subj and
+                                                          not kb.contains_fact(True, "train", rel, e, obj) and
+                                                          not kb.contains_fact(True, "test", rel, e, obj) and
+                                                          not kb.contains_fact(True, "valid", rel, e, obj),
+                                                          kb.get_symbols(1)))
 
-    neg_triples = map(lambda e: (rel, subj, e) if position == "obj" else (rel, e, obj), neg_triples)
-    scores = np.array(model.score_triples(sess, [triple] + neg_triples))
+    scores = model.score_triples(sess, [triple] + neg_triples)
     ix = np.argsort(scores)[::-1]
     rank = np.where(ix == 0)[0][0] + 1
 
