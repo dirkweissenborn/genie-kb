@@ -137,11 +137,12 @@ with tf.Session() as sess:
         #        sess.run(model.l2_update)
 
         if i % FLAGS.ckpt_its == 0:
+            loss /= FLAGS.ckpt_its
             if not FLAGS.batch_train:
+                loss /= FLAGS.pos_per_batch  # loss is not normalized in batch mode, so we have to do it here
                 print ""
                 print "%d%% epochs done." % (float(i)/fact_sampler.epoch_size)
             # Print statistics for the previous epoch.
-            loss /= FLAGS.ckpt_its
             step_time /= FLAGS.ckpt_its
             sample_time /= FLAGS.ckpt_its
             print "global step %d learning rate %.4f, step-time %.3f, loss %.4f" % (model.global_step.eval(),

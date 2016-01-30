@@ -55,22 +55,21 @@ class AbstractKBScoringModel:
             #        self.scores.append(
             #            self._scoring_f(self.triple_inputs[i+1][0], self.triple_inputs[i+1][1], self.triple_inputs[i+1][2]))
 
-            scores = tf.reshape(self._scores, [-1, num_neg + 1])
             num_pos = int(batch_size/(num_neg+1))
+            scores = tf.reshape(self._scores, [num_pos, num_neg + 1])
             labels = np.zeros([num_pos, num_neg+1], dtype=np.float32)
             labels[:, 0] = 1
             labels = tf.constant(labels, name="labels_constant", dtype=tf.float32)
-            loss = math_ops.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(scores, labels)) \
-                / math_ops.cast(num_pos, dtypes.float32)
+            loss = math_ops.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(scores, labels))
 
             train_params = tf.trainable_variables()
 
             self.training_weight = tf.Variable(float(learning_rate), trainable=False, name="training_weight")
             self._feed_dict[self.training_weight] = np.array([1.0], dtype=np.float32)
             with tf.device("/cpu:0"):
-                self._grads = tf.gradients(loss, train_params, self.training_weight)
                 #clipped_gradients = _clip_by_value(self.grads, -max_grad, max_grad)
                 if is_batch_training:
+                    self._grads = tf.gradients(loss, train_params, self.training_weight)
                     with vs.variable_scope("batch_gradient", initializer=init):
                         self._acc_gradients = map(lambda param: tf.get_variable(param.name.split(":")[0],
                                                                                 param.get_shape(), param.dtype,
@@ -87,7 +86,8 @@ class AbstractKBScoringModel:
                     self._reset = map(lambda param: param.initializer, self._acc_gradients)
                     self._reset.append(self._loss.initializer)
                 else:
-                    self._loss = loss
+                    self._loss = loss / math_ops.cast(num_pos, dtypes.float32)
+                    self._grads = tf.gradients(self._loss, train_params, self.training_weight)
                     self._update = self.opt.apply_gradients(zip(self._grads, train_params), global_step=self.global_step)
 
             if l2_lambda > 0.0:
