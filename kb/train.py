@@ -122,21 +122,18 @@ with tf.Session() as sess:
         sys.stdout.write("\r%.1f%%" % (float((i-1) % FLAGS.ckpt_its + 1.0)*100.0 / FLAGS.ckpt_its))
         sys.stdout.flush()
 
-        if fact_sampler.end_of_epoch():
+        if end_of_epoch:
             print ""
             e += 1
             print "Epoch %d done!" % e
             if FLAGS.batch_train:
-                loss_without_l2 = sess.run(model._loss) / FLAGS.pos_per_batch / FLAGS.ckpt_its
-                print "Loss without L2 %.3f" % loss_without_l2
+                loss_without_l2 = sess.run(model._loss) / FLAGS.pos_per_batch / FLAGS.ckpt_its / 2
+                print "Per example loss without L2 %.3f" % loss_without_l2
                 model.acc_l2_gradients(sess)
                 loss = model.update(sess)
                 model.reset_gradients_and_loss(sess)
-        #    if FLAGS.l2_lambda > 0:
-        #        print "Running L2 Update"
-        #        sess.run(model.l2_update)
 
-        if i % FLAGS.ckpt_its == 0:
+        if (end_of_epoch and FLAGS.batch_train) or (not FLAGS.batch_train  and i % FLAGS.ckpt_its == 0):
             if not FLAGS.batch_train:
                 loss /= FLAGS.ckpt_its
                 print ""
