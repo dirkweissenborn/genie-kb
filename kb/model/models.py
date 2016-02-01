@@ -217,7 +217,7 @@ class DistMult(AbstractKBScoringModel):
 
         self.e_subj = tf.tanh(tf.nn.embedding_lookup(E_subjs, self._subj_input))
         self.e_obj = tf.tanh(tf.nn.embedding_lookup(E_objs, self._obj_input))
-        self.e_rel = tf.tanh(tf.nn.embedding_lookup(E_rels, self._rel_input))
+        self.e_rel = tf.sigmoid(tf.nn.embedding_lookup(E_rels, self._rel_input))
         s_o_prod = self.e_obj * self.e_subj
 
         score = tf_util.dot(self.e_rel, s_o_prod)
