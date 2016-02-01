@@ -417,6 +417,12 @@ class CombinedModel(AbstractKBScoringModel):
         for m in self._models:
             self._feed_dict.update(m._get_feed_dict())
 
+    def _start_adding_triples(self):
+        for m in self._models:
+            m._start_adding_triples()
+        self._feed_dict = dict()
+
+
 
 def create_model(kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2,
                  l2_lambda=0.0, is_batch_training=False, type="DistMult", observed_sets=["train_text"]):
