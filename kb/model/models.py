@@ -320,8 +320,6 @@ class ModelO(AbstractKBScoringModel):
             self._feed_dict[self._rel_input] = self._rel_in[:batch_size]
         else:
             self._feed_dict[self._rel_input] = self._rel_in
-        print(self.__sparse_indices)
-        print(self.__sparse_values)
 
     def _scoring_f(self):
         with tf.device("/cpu:0"):
