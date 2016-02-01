@@ -80,8 +80,33 @@ class KB:
         self.__dims = list()
         # global mapping of symbols to indices independent from dimension
         self.__global_ids = {}
+        # lists compatible arguments for each arg position foreach relation
+        self.__compatible_args = dict()
 
         self.__formulae = {}
+
+    def add_compatible_arg(self, key, dim, rel_key, rel_dim=0):
+        '''
+        :param dim: arg dimension
+        :param key: arg key
+        :param rel_key: key of relation
+        :param rel_dim: dim of relation (usually 0)
+        :return:
+        '''
+        if rel_key in self.__symbols[rel_dim] and key in self.__symbols[dim]:
+            if dim not in self.__compatible_args:
+                self.__compatible_args[dim] = [set() for _ in self.__symbols[rel_dim]]
+            args = self.__compatible_args[dim]
+            rel_id = self.get_id(rel_key, rel_dim)
+            args[rel_id].add(key)
+
+    def compatible_args_of(self, dim, rel_key, rel_dim=0):
+        if len(self.__compatible_args) == 0:
+            # no constraints, return everything
+            return self.__symbols[dim]
+        else:
+            rel_id = self.get_id(rel_key, rel_dim)
+            return self.__compatible_args[dim][rel_id]
 
     def __add_to_facts(self, fact):
         arity = len(fact[0]) - 1

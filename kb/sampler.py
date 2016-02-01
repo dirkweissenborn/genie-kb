@@ -20,8 +20,8 @@ class BatchNegTypeSampler:
         self._subjs = list(self.kb.get_symbols(1))
 
         # we use sampling with type constraints
-        if type_constraint:
-            self.init_types()
+        #if type_constraint:
+        #    self.init_types()
 
     def init_types(self):
         # add types to concepts
@@ -94,23 +94,24 @@ class BatchNegTypeSampler:
 
     def __get_neg_examples(self, triple, position):
         (rel, subj, obj) = triple
-        allowed = self.kb.get_symbols(2) if position == "obj" else self.kb.get_symbols(1)
+        dim = 2 if position == "obj" else 1
+        #allowed = self.kb.get_symbols(dim)
         disallowed = obj if position == "obj" else subj
 
         if self.type_constraint:
             #sample by type
-            neg_candidates = set()
-            typs = self.rel_types[rel+"_o"] if position == "obj" else self.rel_types[rel+"_s"]
+            #neg_candidates = set()
+            #typs = self.rel_types[rel+"_o"] if position == "obj" else self.rel_types[rel+"_s"]
 
             # add negative neg_candidates until there are enough negative neg_candidates
-            i = 0
-            while i < len(typs) and len(neg_candidates) < self.neg_per_pos:
-                typ = typs[i]
-                i += 1
-                for c in self.rel_args[typ]:
-                    if c != disallowed and c in allowed:
-                        neg_candidates.add(c)
-            neg_candidates = list(neg_candidates)
+            #i = 0
+            #while i < len(typs) and len(neg_candidates) < self.neg_per_pos:
+            #    typ = typs[i]
+            #    i += 1
+            #    for c in self.rel_args[typ]:
+            #        if c != disallowed and c in allowed:
+            #            neg_candidates.add(c)
+            neg_candidates = list(self.kb.compatible_args_of(dim, rel))
         else:  # sample from all candidates
             neg_candidates = self._objs if position == "obj" else self._subjs
 

@@ -10,14 +10,14 @@ def rank_triple(sess, kb, model, triple, position="obj"):
                                                            not kb.contains_fact(True, "train", rel, subj, e) and
                                                            not kb.contains_fact(True, "test", rel, subj, e) and
                                                            not kb.contains_fact(True, "valid", rel, subj, e),
-                                                           kb.get_symbols(2)))
+                                                           kb.compatible_args_of(2, rel)))
     else:
         neg_triples = map(lambda e: (rel, e, obj), filter(lambda e:
                                                           e != subj and
                                                           not kb.contains_fact(True, "train", rel, e, obj) and
                                                           not kb.contains_fact(True, "test", rel, e, obj) and
                                                           not kb.contains_fact(True, "valid", rel, e, obj),
-                                                          kb.get_symbols(1)))
+                                                          kb.compatible_args_of(1, rel)))
 
     scores = model.score_triples(sess, [triple] + neg_triples)
     ix = np.argsort(scores)[::-1]

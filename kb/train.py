@@ -1,7 +1,7 @@
 import random
 import os
 import time
-from data.load_fb15k237 import load_fb15k
+from data.load_fb15k237 import load_fb15k, load_fb15k_type_constraints
 from sampler import *
 from eval import eval_triples
 from model.models import *
@@ -45,6 +45,10 @@ random.seed(FLAGS.random_seed)
 kb = load_fb15k(FLAGS.fb15k_dir, with_text=not FLAGS.kb_only)
 if FLAGS.subsample_kb > 0:
     kb = subsample_kb(kb, FLAGS.subsample_kb)
+
+if FLAGS.type_constraint:
+    print("Loading type constraints!")
+    load_fb15k_type_constraints(kb, os.path.join(FLAGS.fb15k_dir, "types"))
 
 num_kb = 0
 num_text = 0

@@ -20,6 +20,23 @@ def load_fb15k(dir, with_text=True, split_text=False, max_vocab=-1):
 
     return kb
 
+
+def load_fb15k_type_constraints(kb, dir):
+    subj_file = os.path.join(dir, "ecompatiblenesbj.txt")
+    obj_file = os.path.join(dir, "ecompatibleneobj.txt")
+
+    load_type_constraints(kb, subj_file, 1)
+    load_type_constraints(kb, obj_file, 2)
+
+
+def load_type_constraints(kb, fn, arg_dim, rel_dim=0):
+    with open(fn, 'r') as f:
+        for l in f:
+            split = l.strip().split("\t")
+            for i in xrange(1, len(split)):
+                kb.add_compatible_arg(split[0], arg_dim, split[i], rel_dim)
+
+
 def _load_triples(fn, kb, typ="train"):
     triples = []
     with open(fn) as f:
