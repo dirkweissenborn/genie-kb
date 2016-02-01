@@ -89,11 +89,15 @@ if __name__ == "__main__":
     # Evaluation
     tf.app.flags.DEFINE_string("model_path", None, "Path to trained model.")
     tf.app.flags.DEFINE_integer("batch_size", 20000, "Number of examples in each batch for training.")
+    tf.app.flags.DEFINE_boolean("type_constraint", False, "Use type constraint during sampling.")
 
     FLAGS = tf.app.flags.FLAGS
 
     kb = load_fb15k(FLAGS.fb15k_dir,  with_text=False)
     print("Loaded data.")
+    if FLAGS.type_constraint:
+        print("Loading type constraints!")
+        load_fb15k_type_constraints(kb, os.path.join(FLAGS.fb15k_dir, "types"))
 
     with tf.Session() as sess:
         model = DistMult(kb, FLAGS.size, FLAGS.batch_size, is_train=False)
