@@ -183,7 +183,7 @@ with tf.Session() as sess:
     model_name = mrr2modelpath[best_valid_mrr].split("/")[-1]
     shutil.copyfile(mrr2modelpath[best_valid_mrr], os.path.join(FLAGS.save_dir, model_name))
     print "########## Test ##############"
-    mrr, hits10 = eval_triples(sess, kb, model, kb.get_all_facts_of_arity(2, "test"), verbose=True)
+    mrr, hits10 = eval_triples(sess, kb, model, map(lambda x: x[0], kb.get_all_facts_of_arity(2, "test")), verbose=True)
     with open(os.path.join(FLAGS.save_dir, "result.txt"), 'w') as f:
         f.write("best model: %s\nMRR: %.3f\nHits10: %.3f" % (model_name, mrr, hits10))
         f.flush()
