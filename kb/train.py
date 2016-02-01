@@ -73,8 +73,8 @@ train_dir = os.path.join(FLAGS.save_dir, "train")
 i = 0
 
 subsample_validation = map(lambda x: x[0], kb.get_all_facts_of_arity(2, "valid"))
-if len(subsample_validation) > 1000:
-    subsample_validation = random.sample(subsample_validation, 1000)
+if len(subsample_validation) > 5000:
+    subsample_validation = random.sample(subsample_validation, 5000)
 
 
 if FLAGS.ckpt_its <= 0:
