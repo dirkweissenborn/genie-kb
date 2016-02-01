@@ -1,29 +1,38 @@
 import numpy as np
 import sys
+import math
+
 
 def rank_triple(sess, kb, model, triple, position="obj"):
     (rel, subj, obj) = triple
 
     if position == "obj":
+        compatible = kb.compatible_args_of(2, rel)
+        if obj not in compatible:
+            return float('Inf')
+
         neg_triples = map(lambda e: (rel, subj, e), filter(lambda e:
                                                            e != obj and
                                                            not kb.contains_fact(True, "train", rel, subj, e) and
                                                            not kb.contains_fact(True, "test", rel, subj, e) and
                                                            not kb.contains_fact(True, "valid", rel, subj, e),
-                                                           kb.compatible_args_of(2, rel)))
+                                                           compatible))
     else:
+        compatible = kb.compatible_args_of(1, rel)
+        if subj not in compatible:
+            return float('Inf')
         neg_triples = map(lambda e: (rel, e, obj), filter(lambda e:
                                                           e != subj and
                                                           not kb.contains_fact(True, "train", rel, e, obj) and
                                                           not kb.contains_fact(True, "test", rel, e, obj) and
                                                           not kb.contains_fact(True, "valid", rel, e, obj),
-                                                          kb.compatible_args_of(1, rel)))
+                                                          compatible))
 
     scores = model.score_triples(sess, [triple] + neg_triples)
     ix = np.argsort(scores)[::-1]
     rank = np.where(ix == 0)[0][0] + 1
 
-    return rank, ix
+    return rank
 
 
 def eval_triples(sess, kb, model, triples, position="both", verbose=False):
@@ -35,8 +44,8 @@ def eval_triples(sess, kb, model, triples, position="both", verbose=False):
     for triple in triples:
         i += 1
         if position == "both":
-            rank_s, _ = rank_triple(sess, kb, model, triple, "subj")
-            rank_o, _ = rank_triple(sess, kb, model, triple, "obj")
+            rank_s = rank_triple(sess, kb, model, triple, "subj")
+            rank_o = rank_triple(sess, kb, model, triple, "obj")
             rec_rank += 1.0/rank_s
             rec_rank += 1.0/rank_o
             if rank_s <= 10:
@@ -45,7 +54,7 @@ def eval_triples(sess, kb, model, triples, position="both", verbose=False):
                 top10 += 1
             ct += 2.0
         else:
-            rank, _ = rank_triple(sess, kb, model, triple, position)
+            rank = rank_triple(sess, kb, model, triple, position)
             rec_rank += 1.0 / rank
             if rank <= 10:
                 top10 += 1

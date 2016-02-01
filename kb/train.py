@@ -141,7 +141,7 @@ with tf.Session() as sess:
             if not FLAGS.batch_train:
                 loss /= FLAGS.ckpt_its
                 print ""
-                print "%d%% epochs done." % (float(i)/fact_sampler.epoch_size)
+                print "%d%% epochs done." % (i*100/fact_sampler.epoch_size)
             # Print statistics for the previous epoch.
             step_time /= FLAGS.ckpt_its
             print "global step %d learning rate %.4f, step-time %.3f, loss %.4f" % (model.global_step.eval(),
