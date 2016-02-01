@@ -78,7 +78,7 @@ def eval_triples(sess, kb, model, triples, position="both", verbose=False):
 
 if __name__ == "__main__":
     import os
-    from data.load_fb15k237 import load_fb15k
+    from data.load_fb15k237 import load_fb15k, load_fb15k_type_constraints
     from model.models import *
 
     # data loading specifics
