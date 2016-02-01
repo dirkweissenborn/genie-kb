@@ -8,6 +8,7 @@ from model.models import *
 import sys
 from kb import subsample_kb
 import shutil
+import json
 
 
 # data loading specifics
@@ -33,8 +34,14 @@ tf.app.flags.DEFINE_boolean("batch_train", False, "Use batch training.")
 tf.app.flags.DEFINE_boolean("type_constraint", False, "Use type constraint during sampling.")
 tf.app.flags.DEFINE_string("save_dir", "save/" + time.strftime("%d%m%Y_%H%M%S", time.localtime()),
                            "Where to save model and its configuration, always last will be kept.")
+tf.app.flags.DEFINE_string("model", "DistMult",
+                           "Model architecture or combination thereof split by comma of: "
+                           "'ModelF', 'DistMult', 'ModelE', 'ModelO'")
 
 FLAGS = tf.app.flags.FLAGS
+
+if "," in FLAGS.model:
+    FLAGS.model = FLAGS.model.split(",")
 
 assert (not FLAGS.batch_train or FLAGS.ckpt_its <= -1), "Do not define checkpoint iterations when doing batch training."
 
@@ -82,16 +89,22 @@ if FLAGS.ckpt_its <= 0:
     FLAGS.ckpt_its = fact_sampler.epoch_size
 
 with tf.Session() as sess:
-    model = DistMult(kb, FLAGS.size, batch_size, num_neg=FLAGS.num_neg, learning_rate=FLAGS.learning_rate,
-                     l2_lambda=FLAGS.l2_lambda, is_batch_training=FLAGS.batch_train)
-    if os.path.exists(train_dir):
+    model = create_model(kb, FLAGS.size, batch_size, num_neg=FLAGS.num_neg, learning_rate=FLAGS.learning_rate,
+                         l2_lambda=FLAGS.l2_lambda, is_batch_training=FLAGS.batch_train, type=FLAGS.model)
+    if os.path.exists(train_dir) and any("ckpt" in x for x in os.listdir(train_dir)):
         newest = max(map(lambda x: os.path.join(train_dir, x),
                          filter(lambda x: ".ckpt" in x, os.listdir(train_dir))), key=os.path.getctime)
         print "Loading from checkpoint " + newest
         model.saver.restore(sess, newest)
     else:
-        os.makedirs(train_dir)
+        if not os.path.exists(train_dir):
+            os.makedirs(train_dir)
         sess.run(tf.initialize_all_variables())
+
+    num_params = reduce(lambda acc, x: acc + x.size, sess.run(tf.trainable_variables()), 0)
+    print("Num params: %d" % num_params)
+
+
     print("Initialized model.")
     loss = 0.0
     step_time = 0.0
@@ -150,7 +163,7 @@ with tf.Session() as sess:
             if not FLAGS.batch_train:
                 loss /= FLAGS.ckpt_its
                 print ""
-                print "%d%% epochs done." % (i*100/fact_sampler.epoch_size)
+                print "%.2f epochs done." % (float(i)/fact_sampler.epoch_size)
             # Print statistics for the previous epoch.
             step_time /= FLAGS.ckpt_its
             print "global step %d learning rate %.4f, step-time %.3f, loss %.4f" % (model.global_step.eval(),
@@ -179,12 +192,13 @@ with tf.Session() as sess:
 
     best_valid_mrr = max(previous_mrrs)
     print("Restore model to best on validation, with MRR: %.3f" % best_valid_mrr)
-    model = model.saver.restore(sess, mrr2modelpath[best_valid_mrr])
+    model.saver.restore(sess, mrr2modelpath[best_valid_mrr])
     model_name = mrr2modelpath[best_valid_mrr].split("/")[-1]
     shutil.copyfile(mrr2modelpath[best_valid_mrr], os.path.join(FLAGS.save_dir, model_name))
     print "########## Test ##############"
     mrr, hits10 = eval_triples(sess, kb, model, map(lambda x: x[0], kb.get_all_facts_of_arity(2, "test")), verbose=True)
     with open(os.path.join(FLAGS.save_dir, "result.txt"), 'w') as f:
-        f.write("best model: %s\nMRR: %.3f\nHits10: %.3f" % (model_name, mrr, hits10))
+        f.write("best model: %s\nMRR: %.3f\nHits10: %.3f\n\nFLAGS:\n" % (model_name, mrr, hits10))
+        f.write(FLAGS)
         f.flush()
     print "##############################"

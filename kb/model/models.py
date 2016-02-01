@@ -14,16 +14,8 @@ def _clip_by_value(gradients, min_value, max_value):
 
 class AbstractKBScoringModel:
 
-    def __init__(self, kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2, max_grad=5, l2_lambda=0.0,
-                 is_batch_training=False, which_sets={"train", "train_text"}):
-
-        self.tuple_ids = dict()
-        for (rel, subj, obj), _, typ in kb.get_all_facts():
-            if typ in which_sets:
-                tup = (subj, obj)
-                if tup not in self.tuple_ids:
-                    self.tuple_ids[tup] = len(self.tuple_ids)
-
+    def __init__(self, kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2, l2_lambda=0.0,
+                 is_batch_training=False):
         self._kb = kb
         self._size = size
         self._batch_size = batch_size
@@ -102,6 +94,8 @@ class AbstractKBScoringModel:
 
         self.saver = tf.train.Saver(tf.all_variables())
 
+    def name(self):
+        return self.__class__.__name__
 
     def _scoring_f(self):
         """
@@ -228,21 +222,23 @@ class DistMult(AbstractKBScoringModel):
 class ModelE(AbstractKBScoringModel):
 
     def _scoring_f(self):
-        E_subjs = tf.get_variable("E_s", [len(self._kb.get_symbols(1)), self._size])
-        E_objs = tf.get_variable("E_o", [len(self._kb.get_symbols(2)), self._size])
-        E_rels_s = tf.get_variable("E_r_s", [len(self._kb.get_symbols(0)), self._size])
-        E_rels_o = tf.get_variable("E_r_o", [len(self._kb.get_symbols(0)), self._size])
-        self.e_subj = tf.nn.embedding_lookup(E_subjs, self._subj_input)
-        self.e_obj = tf.nn.embedding_lookup(E_objs, self._obj_input)
-        self.e_rel_s = tf.nn.embedding_lookup(E_rels_s, self._rel_input)
-        self.e_rel_o = tf.nn.embedding_lookup(E_rels_o, self._rel_input)
+        with tf.device("/cpu:0"):
+            E_subjs = tf.get_variable("E_s", [len(self._kb.get_symbols(1)), self._size])
+            E_objs = tf.get_variable("E_o", [len(self._kb.get_symbols(2)), self._size])
+            E_rels_s = tf.get_variable("E_r_s", [len(self._kb.get_symbols(0)), self._size])
+            E_rels_o = tf.get_variable("E_r_o", [len(self._kb.get_symbols(0)), self._size])
+
+        self.e_subj = tf.tanh(tf.nn.embedding_lookup(E_subjs, self._subj_input))
+        self.e_obj = tf.tanh(tf.nn.embedding_lookup(E_objs, self._obj_input))
+        self.e_rel_s = tf.tanh(tf.nn.embedding_lookup(E_rels_s, self._rel_input))
+        self.e_rel_o = tf.tanh(tf.nn.embedding_lookup(E_rels_o, self._rel_input))
 
         score = tf_util.dot(self.e_rel_s, self.e_subj) + tf_util.dot(self.e_rel_o, self.e_obj)
 
         return score
 
 
-class ObservedModel(AbstractKBScoringModel):
+class ModelO(AbstractKBScoringModel):
 
     def _init_inputs(self):
         self.__num_relations = len(self._kb.get_symbols(0))
@@ -317,7 +313,6 @@ class ObservedModel(AbstractKBScoringModel):
 
         return tf_util.dot(self.e_rel, self.e_tuple_rels)
 
-
 class ModelF(AbstractKBScoringModel):
 
     def _init_inputs(self):
@@ -356,10 +351,67 @@ class ModelF(AbstractKBScoringModel):
     def _scoring_f(self):
         with tf.device("/cpu:0"):
            E_rels = tf.get_variable("E_r", [len(self._kb.get_symbols(0)), self._size])
-           E_tups = tf.get_variable("E_r", [len(self.__tuple_lookup), self._size])
+           E_tups = tf.get_variable("E_t", [len(self.__tuple_lookup), self._size])
 
         self.e_rel = tf.tanh(tf.nn.embedding_lookup(E_rels, self._rel_input))
         self.e_tup = tf.tanh(tf.nn.embedding_lookup(E_tups, self._tuple_input))
 
         return tf_util.dot(self.e_rel, self.e_tup)
 
+
+class CombinedModel(AbstractKBScoringModel):
+
+    def __init__(self, models, kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2, l2_lambda=0.0,
+                 is_batch_training=False, share_vars=False):
+        self._models = []
+        for m in models:
+            if share_vars:
+                if m != models[0]:
+                    vs.get_variable_scope().reuse_variables()
+                self._models.append(create_model(kb, size, batch_size, False, num_neg, learning_rate, l2_lambda,
+                                                  is_batch_training, type=m))
+            else:
+                with vs.variable_scope(m):
+                    self._models.append(create_model(kb, size, batch_size, False, num_neg, learning_rate, l2_lambda,
+                                                      is_batch_training, type=m))
+
+        AbstractKBScoringModel.__init__(self, kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2,
+                                        l2_lambda=0.0, is_batch_training=False)
+
+    def _scoring_f(self):
+        weights = map(lambda _: tf.Variable(float(1)), xrange(len(self._models)-1))
+        scores = [self._models[0]._scores]
+        for i in xrange(len(self._models)-1):
+            scores.append(self._models[i+1]._scores * weights[i])
+        return tf.reduce_sum(tf.pack(scores), 0)
+
+    def _add_triple_to_input(self, t, j):
+        for m in self._models:
+            m._add_triple_to_input(t, j)
+
+
+    def _finish_adding_triples(self, batch_size):
+        for m in self._models:
+            m._finish_adding_triples(batch_size)
+        for m in self._models:
+            self._feed_dict.update(m._get_feed_dict())
+
+
+def create_model(kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2,
+                 l2_lambda=0.0, is_batch_training=False, type="DistMult"):
+    '''
+    Factory Method for all models
+    :return: Model of type "type"
+    '''
+    if type == "ModelF":
+        return ModelF(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
+    elif type == "DistMult":
+        return DistMult(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
+    elif type == "ModelE":
+        return ModelE(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
+    elif type == "ModelO":
+        return ModelE(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
+    elif isinstance(type, list):
+        return CombinedModel(type, kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
+    else:
+        raise NameError("There is no model with type %s. Possible values are 'ModelF', 'DistMult', 'ModelE', 'ModelO'." % type)
