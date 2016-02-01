@@ -53,6 +53,7 @@ if FLAGS.batch_train:
     print("Batch training!")
 
 random.seed(FLAGS.random_seed)
+tf.set_random_seed(FLAGS.random_seed)
 
 kb = load_fb15k(FLAGS.fb15k_dir, with_text=not FLAGS.kb_only)
 if FLAGS.subsample_kb > 0:
@@ -171,10 +172,10 @@ with tf.Session() as sess:
 
             # Run evals on development set and print their perplexity.
             print "########## Validation ##############"
-            mrr, top10 = eval_triples(sess, kb, model, subsample_validation, verbose=True)
+            (mrr, top10), _, _ = eval_triples(sess, kb, model, subsample_validation, verbose=True)
 
-            # Decrease learning rate if no improvement was seen over last 3 times.
-            if len(previous_mrrs) > 2 and mrr < min(previous_mrrs[-2:]):
+            # Decrease learning rate if no improvement was seen over last 2 times.
+            if len(previous_mrrs) > 2 and mrr <= min(previous_mrrs[-2:])+1e-4:
                 print "Stop learning!"
                 break
                 #lr = model.learning_rate.eval()
@@ -193,9 +194,11 @@ with tf.Session() as sess:
     model_name = mrr2modelpath[best_valid_mrr].split("/")[-1]
     shutil.copyfile(mrr2modelpath[best_valid_mrr], os.path.join(FLAGS.save_dir, model_name))
     print "########## Test ##############"
-    mrr, hits10 = eval_triples(sess, kb, model, map(lambda x: x[0], kb.get_all_facts_of_arity(2, "test")), verbose=True)
+    (mrr, top10), (mrr_wt, top10_wt), (mrr_nt, top10_nt) = eval_triples(sess, kb, model, map(lambda x: x[0], kb.get_all_facts_of_arity(2, "test")), verbose=True)
     with open(os.path.join(FLAGS.save_dir, "result.txt"), 'w') as f:
-        f.write("best model: %s\nMRR: %.3f\nHits10: %.3f\n\nFLAGS:\n" % (model_name, mrr, hits10))
-        f.write(FLAGS)
+        f.write("best model: %s\n\nMRR: %.3f\nHits10: %.3f\n\n" % (model_name, mrr, top10))
+        f.write("MRR wt: %.3f\nHits10 wt: %.3f\n\n" % (mrr_wt, top10_wt))
+        f.write("MRR nt: %.3f\nHits10 nt: %.3f\n\nFLAGS:\n" % (mrr_nt, top10_nt))
+        f.write(json.dumps(FLAGS.__flags, sort_keys=True, indent=2, separators=(',', ': ')))
         f.flush()
     print "##############################"

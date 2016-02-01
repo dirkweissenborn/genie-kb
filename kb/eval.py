@@ -36,9 +36,23 @@ def rank_triple(sess, kb, model, triple, position="obj"):
 
 
 def eval_triples(sess, kb, model, triples, position="both", verbose=False):
+    has_text_mention = set()
+    for (subj, pred, obj), _, _ in kb.get_all_facts_of_arity(2, "train_text"):
+        has_text_mention.add((subj, obj))
+        has_text_mention.add((obj, subj))
+
     top10 = 0.0
     rec_rank = 0.0
     total = len(triples)
+    # with textual mentions
+    top10_wt = 0.0
+    rec_rank_wt = 0.0
+    total_wt = 0.0
+    # without textual mentions
+    top10_nt = 0.0
+    rec_rank_nt = 0.0
+    total_nt = 0.0
+
     ct = 0.0
     i = 0
     for triple in triples:
@@ -53,12 +67,39 @@ def eval_triples(sess, kb, model, triples, position="both", verbose=False):
             if rank_o <= 10:
                 top10 += 1
             ct += 2.0
+
+            if (triple[1], triple[2]) in has_text_mention:
+                rec_rank_wt += 1.0/rank_s
+                rec_rank_wt += 1.0/rank_o
+                if rank_s <= 10:
+                    top10_wt += 1
+                if rank_o <= 10:
+                    top10_wt += 1
+                total_wt += 2.0
+            else:
+                rec_rank_nt += 1.0/rank_s
+                rec_rank_nt += 1.0/rank_o
+                if rank_s <= 10:
+                    top10_nt += 1
+                if rank_o <= 10:
+                    top10_nt += 1
+                total_nt += 2.0
         else:
             rank = rank_triple(sess, kb, model, triple, position)
             rec_rank += 1.0 / rank
             if rank <= 10:
                 top10 += 1
             ct += 1.0
+            if (triple[1], triple[2]) in has_text_mention:
+                rec_rank_wt += 1.0/rank
+                if rank <= 10:
+                    top10_wt += 1
+                total_wt += 1.0
+            else:
+                rec_rank_nt += 1.0/rank
+                if rank <= 10:
+                    top10_nt += 1
+                total_nt += 1.0
         if verbose:
             if ct % 10 == 0:
                 sys.stdout.write("\r%.1f%%, mrr: %.3f, top10: %.3f" % (i*100.0 / total, rec_rank / ct, top10 / ct))
@@ -69,11 +110,24 @@ def eval_triples(sess, kb, model, triples, position="both", verbose=False):
     mrr = rec_rank / ct
     top10 /= ct
 
+    if total_wt > 0.0:
+        mrr_wt = rec_rank_wt / total_wt
+        top10_wt /= total_wt
+    else:
+        mrr_wt = 0.0
+
+    mrr_nt = rec_rank_nt / total_nt
+    top10_nt /= total_nt
+
     if verbose:
         print "MRR: %.3f" % mrr
         print "Top10: %.3f" % top10
+        print "MRR wt: %.3f" % mrr_wt
+        print "Top10 wt: %.3f" % top10_wt
+        print "MRR nt: %.3f" % mrr_nt
+        print "Top10 nt: %.3f" % top10_nt
 
-    return mrr, top10
+    return (mrr, top10), (mrr_wt, top10_wt), (mrr_nt, top10_nt)
 
 
 if __name__ == "__main__":
