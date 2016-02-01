@@ -90,10 +90,13 @@ with tf.Session() as sess:
     loss = 0.0
     step_time = 0.0
     previous_mrrs = list()
+    mrr2modelpath = dict()
     e = 0
     mode = "update"
     if FLAGS.batch_train:
         mode = "accumulate"
+
+    checkpoint_path = os.path.join(train_dir, "model.ckpt")
 
     next_batch = fact_sampler.get_batch_async()
     while FLAGS.max_iterations < 0 or i < FLAGS.max_iterations:
@@ -156,12 +159,22 @@ with tf.Session() as sess:
 
             # Decrease learning rate if no improvement was seen over last 3 times.
             if len(previous_mrrs) > 2 and mrr < min(previous_mrrs[-2:]):
-                lr = model.learning_rate.eval()
-                sess.run(model.learning_rate.assign(lr * FLAGS.learning_rate_decay))
-                print "Decaying learning rate to: %.4f" % model.learning_rate.eval()
+                print "Stop learning!"
+                break
+                #lr = model.learning_rate.eval()
+                #sess.run(model.learning_rate.assign(lr * FLAGS.learning_rate_decay))
+                #print "Decaying learning rate to: %.4f" % model.learning_rate.eval()
 
             previous_mrrs.append(mrr)
             # Save checkpoint and zero timer and loss.
-            checkpoint_path = os.path.join(train_dir, "model.ckpt")
-            model.saver.save(sess, checkpoint_path, global_step=model.global_step)
+            path = model.saver.save(sess, checkpoint_path, global_step=model.global_step)
+            mrr2modelpath[mrr] = path
             print "####################################"
+
+    best_valid_mrr = max(previous_mrrs)
+    print("Restore model to best on validation, with MRR: %.3f" % best_valid_mrr)
+    model = model.saver.restore(sess, mrr2modelpath[best_valid_mrr])
+
+    print "########## Test ##############"
+    eval_triples(sess, kb, model, kb.get_all_facts_of_arity(2, "test"), verbose=True)
+    print "##############################"
