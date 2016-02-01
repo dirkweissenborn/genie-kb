@@ -68,7 +68,6 @@ if not FLAGS.kb_only:
 print("Created Samplers.")
 
 train_dir = os.path.join(FLAGS.save_dir, "train")
-os.makedirs(train_dir)
 
 i = 0
 
@@ -84,8 +83,14 @@ if FLAGS.ckpt_its <= 0:
 with tf.Session() as sess:
     model = DistMult(kb, FLAGS.size, batch_size, num_neg=FLAGS.num_neg, learning_rate=FLAGS.learning_rate,
                      l2_lambda=FLAGS.l2_lambda, is_batch_training=FLAGS.batch_train)
-
-    sess.run(tf.initialize_all_variables())
+    if os.path.exists(train_dir):
+        newest = max(map(lambda x: os.path.join(train_dir, x),
+                         filter(lambda x: ".ckpt" in x, os.listdir(train_dir))), key=os.path.getctime)
+        print "Loading from checkpoint " + newest
+        model.saver.restore(sess, newest)
+    else:
+        os.makedirs(train_dir)
+        sess.run(tf.initialize_all_variables())
     print("Initialized model.")
     loss = 0.0
     step_time = 0.0

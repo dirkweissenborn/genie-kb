@@ -224,16 +224,6 @@ class DistMult(AbstractKBScoringModel):
 
         return score
 
-    def __create_embeddings(self, prefix, num, max_partitions):
-        partition_size = max(num / max_partitions, 1)
-        if max_partitions % num != 0:
-            partition_size += 1
-        embeddings = np.random.uniform(-0.1, 0.1, size=(max_partitions*partition_size, self._size)).astype(np.float32)
-        E = [tf.Variable(embeddings[i*partition_size:(i+1)*partition_size], name="%s_%d" % (prefix, i))
-             for i in xrange(max_partitions)]
-
-        return E
-
 
 class ModelE(AbstractKBScoringModel):
 
@@ -328,5 +318,48 @@ class ObservedModel(AbstractKBScoringModel):
         return tf_util.dot(self.e_rel, self.e_tuple_rels)
 
 
+class ModelF(AbstractKBScoringModel):
 
+    def _init_inputs(self):
+        # create tuple to rel lookup
+        self.__tuple_lookup = dict()
+        for (rel, subj, obj), _, typ in self._kb.get_all_facts():
+            if typ.startswith("train"):
+                s_i = self._kb.get_id(subj, 1)
+                o_i = self._kb.get_id(obj, 2)
+                t = (s_i, o_i)
+                if t not in self.__tuple_lookup:
+                    self.__tuple_lookup[t] = len(self.__tuple_lookup)
+
+        self._rel_input = tf.placeholder(tf.int64, shape=[None], name="rel")
+        self._rel_in = np.zeros([self._batch_size], dtype=np.int64)
+        self._tuple_input = tf.placeholder(tf.int64, shape=[None], name="tuple")
+        self._tuple_in = np.zeros([self._batch_size], dtype=np.int64)
+        self._feed_dict = {}
+
+    def _add_triple_to_input(self, t, j):
+        (rel, subj, obj) = t
+        r_i = self._kb.get_id(rel, 0)
+        self._rel_in[j] = r_i
+        s_i = self._kb.get_id(subj, 1)
+        o_i = self._kb.get_id(obj, 2)
+        self._tuple_in[j] = self.__tuple_lookup[(s_i, o_i)]
+
+    def _finish_adding_triples(self, batch_size):
+        if batch_size < self._batch_size:
+            self._feed_dict[self._rel_input] = self._rel_in[:batch_size]
+            self._feed_dict[self._tuple_input] = self._tuple_in[:batch_size]
+        else:
+            self._feed_dict[self._rel_input] = self._rel_in
+            self._feed_dict[self._tuple_input] = self._tuple_in
+
+    def _scoring_f(self):
+        with tf.device("/cpu:0"):
+           E_rels = tf.get_variable("E_r", [len(self._kb.get_symbols(0)), self._size])
+           E_tups = tf.get_variable("E_r", [len(self.__tuple_lookup), self._size])
+
+        self.e_rel = tf.tanh(tf.nn.embedding_lookup(E_rels, self._rel_input))
+        self.e_tup = tf.tanh(tf.nn.embedding_lookup(E_tups, self._tuple_input))
+
+        return tf_util.dot(self.e_rel, self.e_tup)
 
