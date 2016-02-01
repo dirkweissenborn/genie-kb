@@ -37,7 +37,7 @@ def rank_triple(sess, kb, model, triple, position="obj"):
 
 def eval_triples(sess, kb, model, triples, position="both", verbose=False):
     has_text_mention = set()
-    for (subj, pred, obj), _, _ in kb.get_all_facts_of_arity(2, "train_text"):
+    for (pred, subj, obj), _, _ in kb.get_all_facts_of_arity(2, "train_text"):
         has_text_mention.add((subj, obj))
         has_text_mention.add((obj, subj))
 
