@@ -7,6 +7,7 @@ from eval import eval_triples
 from model.models import *
 import sys
 from kb import subsample_kb
+import shutil
 
 
 # data loading specifics
@@ -179,7 +180,11 @@ with tf.Session() as sess:
     best_valid_mrr = max(previous_mrrs)
     print("Restore model to best on validation, with MRR: %.3f" % best_valid_mrr)
     model = model.saver.restore(sess, mrr2modelpath[best_valid_mrr])
-
+    model_name = mrr2modelpath[best_valid_mrr].split("/")[-1]
+    shutil.copyfile(mrr2modelpath[best_valid_mrr], os.path.join(FLAGS.save_dir, model_name))
     print "########## Test ##############"
-    eval_triples(sess, kb, model, kb.get_all_facts_of_arity(2, "test"), verbose=True)
+    mrr, hits10 = eval_triples(sess, kb, model, kb.get_all_facts_of_arity(2, "test"), verbose=True)
+    with open(os.path.join(FLAGS.save_dir, "result.txt"), 'w') as f:
+        f.write("best model: %s\nMRR: %.3f\nHits10: %.3f" % (model_name, mrr, hits10))
+        f.flush()
     print "##############################"
