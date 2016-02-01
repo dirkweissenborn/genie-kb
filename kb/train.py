@@ -21,7 +21,8 @@ tf.app.flags.DEFINE_integer("size", 10, "hidden size of model")
 # training
 tf.app.flags.DEFINE_float("learning_rate", 1e-2, "Learning rate.")
 tf.app.flags.DEFINE_float("l2_lambda", 0, "L2-regularization rate.")
-tf.app.flags.DEFINE_float("tau", 0.1, "Text triple weight.")
+tf.app.flags.DEFINE_float("sample_text_prob", 0.935,
+                          "Probability of sampling text triple (default is ratio of text (emnlp) to kb triples.")
 tf.app.flags.DEFINE_float("learning_rate_decay", 0.5, "Learning rate decay when loss on validation set does not improve.")
 tf.app.flags.DEFINE_integer("num_neg", 200, "Number of negative examples for training.")
 tf.app.flags.DEFINE_integer("pos_per_batch", 100, "Number of examples in each batch for training.")
@@ -37,11 +38,14 @@ tf.app.flags.DEFINE_string("save_dir", "save/" + time.strftime("%d%m%Y_%H%M%S", 
 tf.app.flags.DEFINE_string("model", "DistMult",
                            "Model architecture or combination thereof split by comma of: "
                            "'ModelF', 'DistMult', 'ModelE', 'ModelO'")
+tf.app.flags.DEFINE_string("observed_sets", "train_text", "Which sets to observe for observed models.")
 
 FLAGS = tf.app.flags.FLAGS
 
 if "," in FLAGS.model:
     FLAGS.model = FLAGS.model.split(",")
+
+FLAGS.observed_sets = FLAGS.observed_sets.split(",")
 
 assert (not FLAGS.batch_train or FLAGS.ckpt_its <= -1), "Do not define checkpoint iterations when doing batch training."
 
@@ -90,7 +94,8 @@ if FLAGS.ckpt_its <= 0:
 
 with tf.Session() as sess:
     model = create_model(kb, FLAGS.size, batch_size, num_neg=FLAGS.num_neg, learning_rate=FLAGS.learning_rate,
-                         l2_lambda=FLAGS.l2_lambda, is_batch_training=FLAGS.batch_train, type=FLAGS.model)
+                         l2_lambda=FLAGS.l2_lambda, is_batch_training=FLAGS.batch_train, type=FLAGS.model,
+                         observed_sets=FLAGS.observed_sets)
     if os.path.exists(train_dir) and any("ckpt" in x for x in os.listdir(train_dir)):
         newest = max(map(lambda x: os.path.join(train_dir, x),
                          filter(lambda x: ".ckpt" in x, os.listdir(train_dir))), key=os.path.getctime)
@@ -117,33 +122,25 @@ with tf.Session() as sess:
 
     checkpoint_path = os.path.join(train_dir, "model.ckpt")
 
-    next_batch = fact_sampler.get_batch_async()
+    def sample_next_batch():
+        if FLAGS.kb_only or random.random() >= FLAGS.sample_text_prob:
+            return fact_sampler.get_batch_async()
+        else:
+            return text_sampler.get_batch_async()
+
+    next_batch = sample_next_batch()
+
     while FLAGS.max_iterations < 0 or i < FLAGS.max_iterations:
         i += 1
         start_time = time.time()
         pos, negs = next_batch.get()
         end_of_epoch = fact_sampler.end_of_epoch()
+        current_ct = fact_sampler.count
         # already fetch next batch parallel to running model
-        if FLAGS.kb_only:
-            next_batch = fact_sampler.get_batch_async()
-        else:
-            next_batch = text_sampler.get_batch_async()
+        next_batch = sample_next_batch()
+
         loss += model.step(sess, pos, negs, mode)
         step_time += (time.time() - start_time)
-
-        if not FLAGS.kb_only:
-            sess.run(model.training_weight.assign(FLAGS.tau))
-            n = (num_text/num_kb)
-            for i in xrange(n):
-                pos, negs = next_batch.get()
-                # already fetch next batch parallel to running model
-                if i < n-1:
-                    next_batch = text_sampler.get_batch_async()  # next batch should be from text
-                else:
-                    next_batch = fact_sampler.get_batch_async()  # next batch should be from facts
-                l = model.step(sess, pos, negs, mode)
-                loss += l
-            sess.run(model.training_weight.assign(1.0))
 
         sys.stdout.write("\r%.1f%%" % (float((i-1) % FLAGS.ckpt_its + 1.0)*100.0 / FLAGS.ckpt_its))
         sys.stdout.flush()
@@ -159,11 +156,11 @@ with tf.Session() as sess:
                 loss = model.update(sess)
                 model.reset_gradients_and_loss(sess)
 
-        if (end_of_epoch and FLAGS.batch_train) or (not FLAGS.batch_train  and i % FLAGS.ckpt_its == 0):
+        if (end_of_epoch and FLAGS.batch_train) or (not FLAGS.batch_train and i % FLAGS.ckpt_its == 0):
             if not FLAGS.batch_train:
                 loss /= FLAGS.ckpt_its
                 print ""
-                print "%.2f epochs done." % (float(i)/fact_sampler.epoch_size)
+                print "%d%% in epoch done." % (100*current_ct/fact_sampler.epoch_size)
             # Print statistics for the previous epoch.
             step_time /= FLAGS.ckpt_its
             print "global step %d learning rate %.4f, step-time %.3f, loss %.4f" % (model.global_step.eval(),

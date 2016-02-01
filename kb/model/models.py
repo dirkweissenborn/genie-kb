@@ -240,21 +240,40 @@ class ModelE(AbstractKBScoringModel):
 
 class ModelO(AbstractKBScoringModel):
 
+    def __init__(self, kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2, l2_lambda=0.0,
+                 is_batch_training=False, which_sets=["train_text"]):
+        self._which_sets = set(which_sets)
+        AbstractKBScoringModel.__init__(self, kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2,
+                                        l2_lambda=0.0, is_batch_training=False)
+
     def _init_inputs(self):
-        self.__num_relations = len(self._kb.get_symbols(0))
+        self._rel_ids = dict()
+        len(self._kb.get_symbols(0))
         # create tuple to rel lookup
         self.__tuple_rels_lookup = dict()
         for (rel, subj, obj), _, typ in self._kb.get_all_facts():
-            if typ.startswith("train"):
+            if typ in self._which_sets:
+                if rel not in self._rel_ids:
+                    self._rel_ids[rel] = len(self._rel_ids)
                 s_i = self._kb.get_id(subj, 1)
                 o_i = self._kb.get_id(obj, 2)
-                r_i = self._kb.get_id(rel, 0)
+                r_i = self._rel_ids[rel]
                 t = (s_i, o_i)
                 if t not in self.__tuple_rels_lookup:
                     self.__tuple_rels_lookup[t] = [r_i]
                 else:
                     self.__tuple_rels_lookup[t].append(r_i)
-                r_i += self.__num_relations  # inverse relation
+
+        self.__num_relations = len(self._rel_ids)
+
+        #also add inverse relations to tuples
+        for (rel, subj, obj), _, typ in self._kb.get_all_facts():
+            if typ in self._which_sets:
+                if rel not in self._rel_ids:
+                    self._rel_ids[rel] = len(self._rel_ids)
+                s_i = self._kb.get_id(subj, 1)
+                o_i = self._kb.get_id(obj, 2)
+                r_i = self._rel_ids[rel] + self.__num_relations
                 t = (o_i, s_i)
                 if t not in self.__tuple_rels_lookup:
                     self.__tuple_rels_lookup[t] = [r_i]
@@ -304,14 +323,16 @@ class ModelO(AbstractKBScoringModel):
 
     def _scoring_f(self):
         with tf.device("/cpu:0"):
-           E_rels = tf.get_variable("E_r", [2*self.__num_relations+1, self._size])  # rels + inv rels + default rel
+           E_rels = tf.get_variable("E_r", [len(self._kb.get_symbols(0)), self._size])
+           E_tup_rels = tf.get_variable("E_tup_r", [2*self.__num_relations+1, self._size])  # rels + inv rels + default rel
 
         self.e_rel = tf.tanh(tf.nn.embedding_lookup(E_rels, self._rel_input))
         # weighted sum of tuple rel embeddings
         sparse_tensor = tf.SparseTensor(self._sparse_indices_input, self._sparse_values_input, self._shape_input)
-        self.e_tuple_rels = tf.tanh(tf.nn.embedding_lookup_sparse(E_rels, sparse_tensor, None))
+        self.e_tuple_rels = tf.tanh(tf.nn.embedding_lookup_sparse(E_tup_rels, sparse_tensor, None))
 
         return tf_util.dot(self.e_rel, self.e_tuple_rels)
+
 
 class ModelF(AbstractKBScoringModel):
 
@@ -398,7 +419,7 @@ class CombinedModel(AbstractKBScoringModel):
 
 
 def create_model(kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2,
-                 l2_lambda=0.0, is_batch_training=False, type="DistMult"):
+                 l2_lambda=0.0, is_batch_training=False, type="DistMult", observed_sets=["train_text"]):
     '''
     Factory Method for all models
     :return: Model of type "type"
@@ -410,7 +431,7 @@ def create_model(kb, size, batch_size, is_train=True, num_neg=200, learning_rate
     elif type == "ModelE":
         return ModelE(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
     elif type == "ModelO":
-        return ModelE(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
+        return ModelO(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training, observed_sets)
     elif isinstance(type, list):
         return CombinedModel(type, kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
     else:
