@@ -8,10 +8,6 @@ from tensorflow.python.ops.seq2seq import *
 import tf_util
 import rprop
 
-def _clip_by_value(gradients, min_value, max_value):
-    # clipping would break IndexedSlices and therefore sparse updates, because they get converted to tensors
-    return [tf.clip_by_value(g, min_value, max_value) if isinstance(g, ops.IndexedSlices) else g for g in gradients]
-
 class AbstractKBScoringModel:
 
     def __init__(self, kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2, l2_lambda=0.0,
@@ -99,10 +95,7 @@ class AbstractKBScoringModel:
 
     def _scoring_f(self):
         """
-        :param rel indices of relation(s)
-        :param subj indices of subjects(s)
-        :param obj indices of object(s)
-        :return: a batch_size x 1 tensor of scores
+        :return: a batch_size tensor of scores
         """
         return tf.constant(np.ones([self._batch_size], dtype=np.float32), name="dummy_score", dtype=tf.float32)
 
@@ -250,7 +243,7 @@ class ModelO(AbstractKBScoringModel):
         self._rel_ids = dict()
         len(self._kb.get_symbols(0))
         # create tuple to rel lookup
-        self.__tuple_rels_lookup = dict()
+        self._tuple_rels_lookup = dict()
         for (rel, subj, obj), _, typ in self._kb.get_all_facts():
             if typ in self._which_sets:
                 if rel not in self._rel_ids:
@@ -259,10 +252,10 @@ class ModelO(AbstractKBScoringModel):
                 o_i = self._kb.get_id(obj, 2)
                 r_i = self._rel_ids[rel]
                 t = (s_i, o_i)
-                if t not in self.__tuple_rels_lookup:
-                    self.__tuple_rels_lookup[t] = [r_i]
+                if t not in self._tuple_rels_lookup:
+                    self._tuple_rels_lookup[t] = [r_i]
                 else:
-                    self.__tuple_rels_lookup[t].append(r_i)
+                    self._tuple_rels_lookup[t].append(r_i)
 
         self.__num_relations = len(self._rel_ids)
 
@@ -275,10 +268,10 @@ class ModelO(AbstractKBScoringModel):
                 o_i = self._kb.get_id(obj, 2)
                 r_i = self._rel_ids[rel] + self.__num_relations
                 t = (o_i, s_i)
-                if t not in self.__tuple_rels_lookup:
-                    self.__tuple_rels_lookup[t] = [r_i]
+                if t not in self._tuple_rels_lookup:
+                    self._tuple_rels_lookup[t] = [r_i]
                 else:
-                    self.__tuple_rels_lookup[t].append(r_i)
+                    self._tuple_rels_lookup[t].append(r_i)
 
         self._rel_input = tf.placeholder(tf.int64, shape=[None], name="rel")
         self._rel_in = np.zeros([self._batch_size], dtype=np.int64)
@@ -288,9 +281,9 @@ class ModelO(AbstractKBScoringModel):
         self._feed_dict = {}
 
     def _start_adding_triples(self):
-        self.__sparse_indices = []
-        self.__sparse_values = []
-        self.__max_cols = 1
+        self._sparse_indices = []
+        self._sparse_values = []
+        self._max_cols = 1
 
     def _add_triple_to_input(self, t, j):
         (rel, subj, obj) = t
@@ -299,23 +292,23 @@ class ModelO(AbstractKBScoringModel):
         s_i = self._kb.get_id(subj, 1)
         o_i = self._kb.get_id(obj, 2)
 
-        rels = self.__tuple_rels_lookup.get((s_i, o_i))
+        rels = self._tuple_rels_lookup.get((s_i, o_i))
         if rels:
             for i in xrange(len(rels)):
                 if rels[i] != r_i:
-                    self.__sparse_indices.append([j, i])
-                    self.__sparse_values.append(rels[i])
-            self.__max_cols = max(self.__max_cols, len(rels) + 1)
+                    self._sparse_indices.append([j, i])
+                    self._sparse_values.append(rels[i])
+            self._max_cols = max(self._max_cols, len(rels) + 1)
             # default relation
-            self.__sparse_indices.append([j, len(rels)])
+            self._sparse_indices.append([j, len(rels)])
         else:
-            self.__sparse_indices.append([j, 0])
-        self.__sparse_values.append(2*self.__num_relations)
+            self._sparse_indices.append([j, 0])
+        self._sparse_values.append(2 * self.__num_relations)
 
     def _finish_adding_triples(self, batch_size):
-        self._feed_dict[self._sparse_indices_input] = self.__sparse_indices
-        self._feed_dict[self._sparse_values_input] = self.__sparse_values
-        self._feed_dict[self._shape_input] = [batch_size, self.__max_cols]
+        self._feed_dict[self._sparse_indices_input] = self._sparse_indices
+        self._feed_dict[self._sparse_values_input] = self._sparse_values
+        self._feed_dict[self._shape_input] = [batch_size, self._max_cols]
         if batch_size < self._batch_size:
             self._feed_dict[self._rel_input] = self._rel_in[:batch_size]
         else:
@@ -332,6 +325,52 @@ class ModelO(AbstractKBScoringModel):
         self.e_tuple_rels = tf.tanh(tf.nn.embedding_lookup_sparse(E_tup_rels, sparse_tensor, None))
 
         return tf_util.dot(self.e_rel, self.e_tuple_rels)
+
+
+class LinkFeat(ModelO):
+
+    def _init_inputs(self):
+        ModelO._init_inputs(self)
+        self._rel_cooc_lookup = dict()
+        for tup, rels in self._tuple_rels_lookup.iteritems():
+            for rel in rels:
+                for rel2 in rels:
+                    if rel != rel2:
+                        rel_cooc = (rel, rel2)
+                        if rel_cooc not in self._rel_cooc_lookup:
+                            self._rel_cooc_lookup[rel_cooc] = len(self._rel_cooc_lookup)
+
+    def _add_triple_to_input(self, t, j):
+        (rel, subj, obj) = t
+        r_i = self._kb.get_id(rel, 0)
+        self._rel_in[j] = r_i
+        s_i = self._kb.get_id(subj, 1)
+        o_i = self._kb.get_id(obj, 2)
+
+        rels = self._tuple_rels_lookup.get((s_i, o_i))
+        if rels:
+            for i in xrange(len(rels)):
+                if rels[i] != r_i:
+                    cooc_id = self._rel_cooc_lookup.get((r_i, rels[i]))
+                    if cooc_id:
+                        self._sparse_indices.append([j, i])
+                        self._sparse_values.append(cooc_id)
+            self._max_cols = max(self._max_cols, len(rels) + 1)
+            # default relation
+            self._sparse_indices.append([j, len(rels)])
+        else:
+            self._sparse_indices.append([j, 0])
+        self._sparse_values.append(len(self._rel_cooc_lookup))
+
+    def _scoring_f(self):
+        with tf.device("/cpu:0"):
+           E_link_feat_weights = tf.get_variable("E_tup_r", [len(self._rel_cooc_lookup) + 1, 1])
+
+        # weighted sum of tuple rel embeddings
+        sparse_tensor = tf.SparseTensor(self._sparse_indices_input, self._sparse_values_input, self._shape_input)
+        score = tf.reshape(tf.nn.embedding_lookup_sparse(E_link_feat_weights, sparse_tensor, None), [-1])
+
+        return score
 
 
 class ModelF(AbstractKBScoringModel):
@@ -428,7 +467,7 @@ def create_model(kb, size, batch_size, is_train=True, num_neg=200, learning_rate
                  l2_lambda=0.0, is_batch_training=False, type="DistMult", observed_sets=["train_text"]):
     '''
     Factory Method for all models
-    :return: Model of type "type"
+    :return: Model(s) of type "type"
     '''
     if type == "ModelF":
         return ModelF(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
@@ -438,6 +477,8 @@ def create_model(kb, size, batch_size, is_train=True, num_neg=200, learning_rate
         return ModelE(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
     elif type == "ModelO":
         return ModelO(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training, observed_sets)
+    elif type == "LinkFeat":
+        return LinkFeat(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training, observed_sets)
     elif isinstance(type, list):
         return CombinedModel(type, kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
     else:

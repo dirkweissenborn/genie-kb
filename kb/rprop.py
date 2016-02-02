@@ -10,19 +10,7 @@ from tensorflow.python.training import optimizer
 
 
 class RPropOptimizer(optimizer.Optimizer):
-    """Optimizer that implements the Adam algorithm.
-
-    @@__init__
-    -- (0) get/update state
-      local config = config or {}
-      local state = state or config
-      local stepsize = config.stepsize or 0.1
-      local etaplus = config.etaplus or 1.2
-      local etaminus = config.etaminus or 0.5
-      local stepsizemax = config.stepsizemax or 50.0
-      local stepsizemin = config.stepsizemin or 1E-06
-      local niter = config.niter or 1
-    """
+    """Optimizer that implements the Adam algorithm."""
 
     def __init__(self, stepsize=0.1, etaplus=1.2, etaminus=0.5, stepsizemax=50.0, stepsizemin=1E-06,
                  use_locking=False, name="RProp"):
@@ -83,7 +71,6 @@ class RPropOptimizer(optimizer.Optimizer):
         var_update = var.assign_sub(up, use_locking=self._use_locking)
 
         return tf.group(*[var_update, step_a])
-
 
     def _apply_sparse(self, grad, var):
         raise NotImplementedError("RProp should be used only in batch_mode.")

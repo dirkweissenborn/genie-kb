@@ -130,7 +130,7 @@ with tf.Session() as sess:
             return text_sampler.get_batch_async()
 
     next_batch = sample_next_batch()
-
+    end_of_epoch = False
     while FLAGS.max_iterations < 0 or i < FLAGS.max_iterations:
         i += 1
         start_time = time.time()
