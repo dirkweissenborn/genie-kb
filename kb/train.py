@@ -39,6 +39,9 @@ tf.app.flags.DEFINE_string("model", "DistMult",
                            "Model architecture or combination thereof split by comma of: "
                            "'ModelF', 'DistMult', 'ModelE', 'ModelO'")
 tf.app.flags.DEFINE_string("observed_sets", "train_text", "Which sets to observe for observed models.")
+tf.app.flags.DEFINE_string("valid_mode", "a", "[a,t,nt] are possible. a- validate on all triples, "
+                                              "t- validate only on triples with text mentions, "
+                                              "nt- validate only on triples without text mentions")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -172,7 +175,16 @@ with tf.Session() as sess:
 
             # Run evals on development set and print their perplexity.
             print "########## Validation ##############"
-            (mrr, top10), _, _ = eval_triples(sess, kb, model, subsample_validation, verbose=True)
+            (mrr_a, _), (mrr_t, _), (mrr_nt, _) = eval_triples(sess, kb, model, subsample_validation, verbose=True)
+
+            if FLAGS.valid_mode == "a":
+                mrr = mrr_a
+            elif FLAGS.valid_mode == "t":
+                mrr = mrr_t
+            elif FLAGS.valid_mode == "nt":
+                mrr = mrr_nt
+            else:
+                raise ValueError("valid_mode flag must be either 'a','t' or 'nt'")
 
             # Decrease learning rate if no improvement was seen over last 2 times.
             if len(previous_mrrs) > 2 and mrr <= min(previous_mrrs[-2:])+1e-4:
