@@ -322,7 +322,7 @@ class ModelO(AbstractKBScoringModel):
         self.e_rel = tf.tanh(tf.nn.embedding_lookup(E_rels, self._rel_input))
         # weighted sum of tuple rel embeddings
         sparse_tensor = tf.SparseTensor(self._sparse_indices_input, self._sparse_values_input, self._shape_input)
-        self.e_tuple_rels = tf.tanh(tf.nn.embedding_lookup_sparse(E_tup_rels, sparse_tensor, None))
+        self.e_tuple_rels = tf.tanh(tf.nn.embedding_lookup_sparse(E_tup_rels, sparse_tensor, None, combiner="sum"))
 
         return tf_util.dot(self.e_rel, self.e_tuple_rels)
 
