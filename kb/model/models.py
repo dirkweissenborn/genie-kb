@@ -25,11 +25,11 @@ class AbstractKBScoringModel:
                 self.opt = rprop.RPropOptimizer()  # tf.train.GradientDescentOptimizer(self.learning_rate)
             else:
                 self.opt = tf.train.AdamOptimizer(self.learning_rate, beta1=0.0)
-        init = tf.random_normal_initializer(0.0, 0.1)
+        self._init = tf.random_normal_initializer(0.0, 0.1)
 
         self._init_inputs()
 
-        with vs.variable_scope("score", initializer=init):
+        with vs.variable_scope("score", initializer=self._init):
             self._scores = self._scoring_f()
 
         if is_train or is_batch_training:
@@ -58,7 +58,7 @@ class AbstractKBScoringModel:
                 #clipped_gradients = _clip_by_value(self.grads, -max_grad, max_grad)
                 if is_batch_training:
                     self._grads = tf.gradients(loss, train_params, self.training_weight)
-                    with vs.variable_scope("batch_gradient", initializer=init):
+                    with vs.variable_scope("batch_gradient", initializer=self._init):
                         self._acc_gradients = map(lambda param: tf.get_variable(param.name.split(":")[0],
                                                                                 param.get_shape(), param.dtype,
                                                                                 tf.constant_initializer(0.0), False),
