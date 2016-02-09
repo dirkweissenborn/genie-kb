@@ -35,7 +35,7 @@ class CompositionalKBScoringModel(AbstractKBScoringModel):
             if c:
                 ct += c
                 if ct % (total / num_buckets) < c:
-                    self._seq_outputs.append(seq_outputs[:l]
+                    self._seq_outputs.append(seq_outputs[:l])
         train_vars = tf.trainable_variables()
         self._seq_grad = tf.placeholder(tf.int64, shape=[None, self._size], name="rel_grad")
         self._rel_input = tf.placeholder(tf.int64, shape=[None, self._size], name="rel")
