@@ -46,6 +46,29 @@ def _load_triples(fn, kb, typ="train"):
     return triples
 
 
+def split_relations(rel):
+    if "[XXX]" in rel:
+        dep_path_arr = []
+        c = 0
+        for i in xrange(len(rel)-2):
+            if rel[i:i+3] == ":<-":
+                if c > 0:  # do not keep [XXX]
+                    dep_path_arr.append(rel[c:i])
+                dep_path_arr.append(":<-")
+                c = i+3
+            elif rel[i:i+2] == ":<":
+                if c > 0:
+                    dep_path_arr.append(rel[c:i])
+                dep_path_arr.append(":<")
+                c = i+2
+            elif rel[i:i+2] == ">:":
+                if c > 0:
+                    dep_path_arr.append(rel[c:i])
+                c = i+2
+        return dep_path_arr
+    else:
+        return rel.split("/")
+
 def _load_dep_paths(fn, kb, typ="train"):
     with open(fn) as f:
         for l in f:

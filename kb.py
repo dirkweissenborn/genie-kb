@@ -78,8 +78,6 @@ class KB:
         self.__maps = list()
         # caches number of dimensions since len(...) is slow
         self.__dims = list()
-        # global mapping of symbols to indices independent from dimension
-        self.__global_ids = {}
         # lists compatible arguments for each arg position foreach relation
         self.__compatible_args = dict()
 
@@ -116,20 +114,10 @@ class KB:
         self.__facts[arity].append(fact)
         self.__all_facts.add(fact)
 
-    def __add_word(self, word):
-        if word not in self.__global_ids:
-            self.__global_ids[word] = len(self.__global_ids)
-
     def __add_to_symbols(self, key, dim):
         if len(self.__symbols) <= dim:
             self.__symbols.append(set())
         self.__symbols[dim].add(key)
-
-        words = key
-        if isinstance(words, basestring):
-            words = [key]
-        for word in words:
-            self.__add_word(word)
 
     def __add_to_vocab(self, key, dim):
         if len(self.__vocab) <= dim:
@@ -240,23 +228,6 @@ class KB:
         for dim in range(len(keys)):
             ids.append(self.get_id(keys[dim], dim))
         return ids
-
-    def get_global_id(self, symbol):
-        return self.__global_ids[symbol]
-
-    def get_global_ids(self, *symbols):
-        ids = list()
-        for symbol in symbols:
-            # fixme
-            if not isinstance(symbol, basestring):
-                for s in symbol:
-                    ids.append(self.get_global_id(s))
-            else:
-                ids.append(self.get_global_id(symbol))
-        return ids
-
-    def num_global_ids(self):
-        return len(self.__global_ids)
 
     def get_key(self, id, dim):
         return self.__vocab[dim][id]

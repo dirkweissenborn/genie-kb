@@ -1,14 +1,16 @@
 import random
 import os
 import time
-from data.load_fb15k237 import load_fb15k, load_fb15k_type_constraints
+from data.load_fb15k237 import load_fb15k, load_fb15k_type_constraints, split_relations
 from sampler import *
 from eval import eval_triples
-from model.models import *
+from model import *
+from model.comp_models import *
 import sys
 from kb import subsample_kb
 import shutil
 import json
+from tensorflow.models.rnn.rnn_cell import *
 
 
 # data loading specifics
@@ -42,6 +44,7 @@ tf.app.flags.DEFINE_string("observed_sets", "train_text", "Which sets to observe
 tf.app.flags.DEFINE_string("valid_mode", "a", "[a,t,nt] are possible. a- validate on all triples, "
                                               "t- validate only on triples with text mentions, "
                                               "nt- validate only on triples without text mentions")
+tf.app.flags.DEFINE_string("composition", None, "'LSTM', 'GRU', 'RNN', 'BoW', 'BiLSTM', 'BiGRU', 'BiRNN'")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -63,7 +66,7 @@ if FLAGS.subsample_kb > 0:
     kb = subsample_kb(kb, FLAGS.subsample_kb)
 
 if FLAGS.type_constraint:
-    print("Loading type constraints!")
+    print("Loading type constraints...")
     load_fb15k_type_constraints(kb, os.path.join(FLAGS.fb15k_dir, "types"))
 
 num_kb = 0
@@ -99,7 +102,10 @@ if FLAGS.ckpt_its <= 0:
 with tf.Session() as sess:
     model = create_model(kb, FLAGS.size, batch_size, num_neg=FLAGS.num_neg, learning_rate=FLAGS.learning_rate,
                          l2_lambda=FLAGS.l2_lambda, is_batch_training=FLAGS.batch_train, type=FLAGS.model,
-                         observed_sets=FLAGS.observed_sets)
+                         observed_sets=FLAGS.observed_sets, composition=FLAGS.composition)
+
+    print "Creating model: " + model.name()
+
     if os.path.exists(train_dir) and any("ckpt" in x for x in os.listdir(train_dir)):
         newest = max(map(lambda x: os.path.join(train_dir, x),
                          filter(lambda x: ".ckpt" in x, os.listdir(train_dir))), key=os.path.getctime)
