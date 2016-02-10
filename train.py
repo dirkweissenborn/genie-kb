@@ -100,11 +100,12 @@ if FLAGS.ckpt_its <= 0:
     FLAGS.ckpt_its = fact_sampler.epoch_size
 
 with tf.Session() as sess:
+    print "Creating model ..."
     model = create_model(kb, FLAGS.size, batch_size, num_neg=FLAGS.num_neg, learning_rate=FLAGS.learning_rate,
                          l2_lambda=FLAGS.l2_lambda, is_batch_training=FLAGS.batch_train, type=FLAGS.model,
                          observed_sets=FLAGS.observed_sets, composition=FLAGS.composition)
 
-    print "Creating model: " + model.name()
+    print "Created model: " + model.name()
 
     if os.path.exists(train_dir) and any("ckpt" in x for x in os.listdir(train_dir)):
         newest = max(map(lambda x: os.path.join(train_dir, x),

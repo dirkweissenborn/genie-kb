@@ -17,42 +17,43 @@ def create_model(kb, size, batch_size, is_train=True, num_neg=200, learning_rate
     :return: Model(s) of type "type"
     '''
     if not isinstance(type, list):
-        if composition == "Tanh":
-            composition = TanhRNNCompModel(kb, size, num_buckets, split_relations, batch_size/(num_neg+1), learning_rate)
-        elif composition == "LSTM":
-            composition = LSTMCompModel(kb, size, num_buckets, split_relations, batch_size/(num_neg+1), learning_rate)
-        elif composition == "GRU":
-            composition = GRUCompModel(kb, size, num_buckets, split_relations, batch_size/(num_neg+1), learning_rate)
-        elif composition == "BiTanh":
-            composition = BiTanhRNNCompModel(kb, size, num_buckets, split_relations, batch_size/(num_neg+1), learning_rate)
-        elif composition == "BiLSTM":
-            composition = BiLSTMCompModel(kb, size, num_buckets, split_relations, batch_size/(num_neg+1), learning_rate)
-        elif composition == "BiGRU":
-            composition = BiGRUCompModel(kb, size, num_buckets, split_relations, batch_size/(num_neg+1), learning_rate)
-        elif composition == "BoW":
-            composition = CompositionModel(kb, size, num_buckets, split_relations, batch_size/(num_neg+1), learning_rate)
-        else:
-            composition = None
-
-        if type == "ModelF":
-            return ModelF(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
-        elif type == "DistMult":
-            if composition:
-                return CompDistMult(kb, size, batch_size, composition, is_train, num_neg, learning_rate)
+        with vs.variable_scope(type):
+            comp_size = 2*size if type == "ModelE" else size
+            if composition == "Tanh":
+                composition = TanhRNNCompModel(kb, comp_size, num_buckets, split_relations, batch_size/(num_neg+1), learning_rate)
+            elif composition == "LSTM":
+                composition = LSTMCompModel(kb, comp_size, num_buckets, split_relations, batch_size/(num_neg+1), learning_rate)
+            elif composition == "GRU":
+                composition = GRUCompModel(kb, comp_size, num_buckets, split_relations, batch_size/(num_neg+1), learning_rate)
+            elif composition == "BiTanh":
+                composition = BiTanhRNNCompModel(kb, comp_size, num_buckets, split_relations, batch_size/(num_neg+1), learning_rate)
+            elif composition == "BiLSTM":
+                composition = BiLSTMCompModel(kb, comp_size, num_buckets, split_relations, batch_size/(num_neg+1), learning_rate)
+            elif composition == "BiGRU":
+                composition = BiGRUCompModel(kb, comp_size, num_buckets, split_relations, batch_size/(num_neg+1), learning_rate)
+            elif composition == "BoW":
+                composition = CompositionModel(kb, comp_size, num_buckets, split_relations, batch_size/(num_neg+1), learning_rate)
             else:
-                return DistMult(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
-        elif type == "ModelE":
-            if composition:
-                return CompModelE(kb, size, batch_size, composition, is_train, num_neg, learning_rate)
+                composition = None
+            if type == "ModelF":
+                return ModelF(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
+            elif type == "DistMult":
+                if composition:
+                    return CompDistMult(kb, size, batch_size, composition, is_train, num_neg, learning_rate)
+                else:
+                    return DistMult(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
+            elif type == "ModelE":
+                if composition:
+                    return CompModelE(kb, size, batch_size, composition, is_train, num_neg, learning_rate)
+                else:
+                    return ModelE(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
+            elif type == "ModelO":
+                return ModelO(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training, observed_sets)
+            elif type == "ModelN":
+                return ModelN(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training, observed_sets)
             else:
-                return ModelE(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
-        elif type == "ModelO":
-            return ModelO(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training, observed_sets)
-        elif type == "ModelN":
-            return ModelN(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training, observed_sets)
-        else:
-            raise NameError("There is no model with type %s. "
-                            "Possible values are 'ModelF', 'DistMult', 'ModelE', 'ModelO', 'ModelN'." % type)
+                raise NameError("There is no model with type %s. "
+                                "Possible values are 'ModelF', 'DistMult', 'ModelE', 'ModelO', 'ModelN'." % type)
     else:
         return CombinedModel(type, kb, size, batch_size, is_train, num_neg,
                              learning_rate, l2_lambda, is_batch_training, composition)

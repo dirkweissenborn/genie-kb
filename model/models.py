@@ -20,82 +20,81 @@ class AbstractKBScoringModel:
         self._is_batch_training = is_batch_training
         self._is_train = is_train
 
-        with vs.variable_scope(self.name()):
-            self.learning_rate = tf.Variable(float(learning_rate), trainable=False, name="lr")
-            self.global_step = tf.Variable(0, trainable=False, name="step")
+        self.learning_rate = tf.Variable(float(learning_rate), trainable=False, name="lr")
+        self.global_step = tf.Variable(0, trainable=False, name="step")
+        with tf.device("/cpu:0"):
+            if is_batch_training:
+                self.opt = rprop.RPropOptimizer()  # tf.train.GradientDescentOptimizer(self.learning_rate)
+            else:
+                self.opt = tf.train.AdamOptimizer(self.learning_rate, beta1=0.0)
+        self._init = model.default_init()
+
+        self._init_inputs()
+
+        with vs.variable_scope("score", initializer=self._init):
+            self._scores = self._scoring_f()
+
+        if is_train or is_batch_training:
+            assert batch_size % (num_neg+1) == 0, "Batch size must be multiple of num_neg+1 during training"
+            #with vs.variable_scope("score", initializer=init):
+            #    tf.get_variable_scope().reuse_variables()
+            #    for i in xrange(num_neg):
+            #        self.triple_inputs.append((tf.placeholder(tf.int64, shape=[None], name="rel_%d" % (i+1)),
+            #                                   tf.placeholder(tf.int64, shape=[None], name="subj_%d" % (i+1)),
+            #                                   tf.placeholder(tf.int64, shape=[None], name="obj_%d" % (i+1))))
+            #        self.scores.append(
+            #            self._scoring_f(self.triple_inputs[i+1][0], self.triple_inputs[i+1][1], self.triple_inputs[i+1][2]))
+
+            num_pos = int(batch_size/(num_neg+1))
+            scores = tf.reshape(self._scores, [num_pos, num_neg + 1])
+            labels = np.zeros([num_pos, num_neg+1], dtype=np.float32)
+            labels[:, 0] = 1
+            labels = tf.constant(labels, name="labels_constant", dtype=tf.float32)
+            loss = math_ops.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(scores, labels))
+
+            train_params = filter(lambda v: self.name() in v.name, tf.trainable_variables())
+
+            self.training_weight = tf.Variable(float(learning_rate), trainable=False, name="training_weight")
+            self._feed_dict[self.training_weight] = np.array([1.0], dtype=np.float32)
             with tf.device("/cpu:0"):
+                #clipped_gradients = _clip_by_value(self.grads, -max_grad, max_grad)
                 if is_batch_training:
-                    self.opt = rprop.RPropOptimizer()  # tf.train.GradientDescentOptimizer(self.learning_rate)
+                    self._grads = tf.gradients(loss, train_params, self.training_weight)
+                    with vs.variable_scope("batch_gradient", initializer=self._init):
+                        self._acc_gradients = map(lambda param: tf.get_variable(param.name.split(":")[0],
+                                                                                param.get_shape(), param.dtype,
+                                                                                tf.constant_initializer(0.0), False),
+                                                  train_params)
+                    self._loss = tf.get_variable("acc_loss", (), tf.float32, tf.constant_initializer(0.0), False)
+                    # We abuse the gradient descent optimizer for accumulating gradients and loss (summing)
+                    acc_opt = tf.train.GradientDescentOptimizer(-1.0)
+                    self._accumulate_gradients = acc_opt.apply_gradients(zip(self._grads, self._acc_gradients))
+                    self._acc_loss = acc_opt.apply_gradients([(loss, self._loss)])
+
+                    self._update = self.opt.apply_gradients(
+                        zip(map(lambda v: v.value(), self._acc_gradients), train_params), global_step=self.global_step)
+                    self._reset = map(lambda param: param.initializer, self._acc_gradients)
+                    self._reset.append(self._loss.initializer)
                 else:
-                    self.opt = tf.train.AdamOptimizer(self.learning_rate, beta1=0.0)
-            self._init = model.default_init()
-
-            self._init_inputs()
-
-            with vs.variable_scope("score", initializer=self._init):
-                self._scores = self._scoring_f()
-
-            if is_train or is_batch_training:
-                assert batch_size % (num_neg+1) == 0, "Batch size must be multiple of num_neg+1 during training"
-                #with vs.variable_scope("score", initializer=init):
-                #    tf.get_variable_scope().reuse_variables()
-                #    for i in xrange(num_neg):
-                #        self.triple_inputs.append((tf.placeholder(tf.int64, shape=[None], name="rel_%d" % (i+1)),
-                #                                   tf.placeholder(tf.int64, shape=[None], name="subj_%d" % (i+1)),
-                #                                   tf.placeholder(tf.int64, shape=[None], name="obj_%d" % (i+1))))
-                #        self.scores.append(
-                #            self._scoring_f(self.triple_inputs[i+1][0], self.triple_inputs[i+1][1], self.triple_inputs[i+1][2]))
-
-                num_pos = int(batch_size/(num_neg+1))
-                scores = tf.reshape(self._scores, [num_pos, num_neg + 1])
-                labels = np.zeros([num_pos, num_neg+1], dtype=np.float32)
-                labels[:, 0] = 1
-                labels = tf.constant(labels, name="labels_constant", dtype=tf.float32)
-                loss = math_ops.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(scores, labels))
-
-                train_params = filter(lambda v: self.name() in v.name, tf.trainable_variables())
-
-                self.training_weight = tf.Variable(float(learning_rate), trainable=False, name="training_weight")
-                self._feed_dict[self.training_weight] = np.array([1.0], dtype=np.float32)
-                with tf.device("/cpu:0"):
-                    #clipped_gradients = _clip_by_value(self.grads, -max_grad, max_grad)
-                    if is_batch_training:
-                        self._grads = tf.gradients(loss, train_params, self.training_weight)
-                        with vs.variable_scope("batch_gradient", initializer=self._init):
-                            self._acc_gradients = map(lambda param: tf.get_variable(param.name.split(":")[0],
-                                                                                    param.get_shape(), param.dtype,
-                                                                                    tf.constant_initializer(0.0), False),
-                                                      train_params)
-                        self._loss = tf.get_variable("acc_loss", (), tf.float32, tf.constant_initializer(0.0), False)
-                        # We abuse the gradient descent optimizer for accumulating gradients and loss (summing)
-                        acc_opt = tf.train.GradientDescentOptimizer(-1.0)
-                        self._accumulate_gradients = acc_opt.apply_gradients(zip(self._grads, self._acc_gradients))
-                        self._acc_loss = acc_opt.apply_gradients([(loss, self._loss)])
-
-                        self._update = self.opt.apply_gradients(
-                            zip(map(lambda v: v.value(), self._acc_gradients), train_params), global_step=self.global_step)
-                        self._reset = map(lambda param: param.initializer, self._acc_gradients)
-                        self._reset.append(self._loss.initializer)
+                    self._loss = loss / math_ops.cast(num_pos, dtypes.float32)
+                    in_params = self._input_params()
+                    if not in_params:
+                        self._grads = tf.gradients(self._loss, train_params, self.training_weight)
                     else:
-                        self._loss = loss / math_ops.cast(num_pos, dtypes.float32)
-                        in_params = self._input_params()
-                        if not in_params:
-                            self._grads = tf.gradients(self._loss, train_params, self.training_weight)
-                        else:
-                            self._grads = tf.gradients(self._loss, train_params + in_params, self.training_weight)
-                            self._input_grads = self._grads[len(train_params):]
-                        self._update = self.opt.apply_gradients(zip(self._grads[:len(train_params)], train_params),
-                                                                global_step=self.global_step)
+                        self._grads = tf.gradients(self._loss, train_params + in_params, self.training_weight)
+                        self._input_grads = self._grads[len(train_params):]
+                    self._update = self.opt.apply_gradients(zip(self._grads[:len(train_params)], train_params),
+                                                            global_step=self.global_step)
 
-                if l2_lambda > 0.0:
-                    l2 = tf.reduce_sum(array_ops.pack([tf.nn.l2_loss(t) for t in train_params]))
-                    l2_loss = l2_lambda * l2
-                    if is_batch_training:
-                        l2_grads = tf.gradients(l2_loss, train_params)
-                        self._l2_accumulate_gradients = acc_opt.apply_gradients(zip(l2_grads, self._acc_gradients))
-                        self._l2_acc_loss = acc_opt.apply_gradients([(l2_loss, self._loss)])
-                    else:
-                        self._l2_update = tf.train.GradientDescentOptimizer(self.learning_rate).minimize(l2_loss, var_list=train_params)
+            if l2_lambda > 0.0:
+                l2 = tf.reduce_sum(array_ops.pack([tf.nn.l2_loss(t) for t in train_params]))
+                l2_loss = l2_lambda * l2
+                if is_batch_training:
+                    l2_grads = tf.gradients(l2_loss, train_params)
+                    self._l2_accumulate_gradients = acc_opt.apply_gradients(zip(l2_grads, self._acc_gradients))
+                    self._l2_acc_loss = acc_opt.apply_gradients([(l2_loss, self._loss)])
+                else:
+                    self._l2_update = tf.train.GradientDescentOptimizer(self.learning_rate).minimize(l2_loss, var_list=train_params)
 
         self.saver = tf.train.Saver(tf.all_variables())
 
@@ -437,12 +436,19 @@ class CombinedModel(AbstractKBScoringModel):
     def __init__(self, models, kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2, l2_lambda=0.0,
                  is_batch_training=False, composition=None, share_vars=False):
         self._models = []
-        for m in models:
-            self._models.append(model.create_model(kb, size, batch_size, False, num_neg, learning_rate,
-                                                   l2_lambda, is_batch_training, composition=composition, type=m))
+        self.__name = '_'.join(models)
+        if composition:
+            self.__name = composition + "__" + self.__name
+        with vs.variable_scope(self.name()):
+            for m in models:
+                self._models.append(model.create_model(kb, size, batch_size, False, num_neg, learning_rate,
+                                                       l2_lambda, False, composition=composition, type=m))
 
-        AbstractKBScoringModel.__init__(self, kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2,
-                                        l2_lambda=0.0, is_batch_training=False)
+        AbstractKBScoringModel.__init__(self, kb, size, batch_size, is_train, num_neg, learning_rate,
+                                        l2_lambda, is_batch_training)
+
+    def name(self):
+        return self.__name
 
     def _scoring_f(self):
         weights = map(lambda _: tf.Variable(float(1)), xrange(len(self._models)-1))
@@ -455,7 +461,6 @@ class CombinedModel(AbstractKBScoringModel):
         for m in self._models:
             m._add_triple_to_input(t, j)
 
-
     def _finish_adding_triples(self, batch_size):
         for m in self._models:
             m._finish_adding_triples(batch_size)
@@ -466,3 +471,8 @@ class CombinedModel(AbstractKBScoringModel):
         for m in self._models:
             m._start_adding_triples()
         self._feed_dict = dict()
+
+    def _input_params(self):
+        ips = []
+        for m in self._models:
+            ips.extend(m._input_params())

@@ -386,12 +386,21 @@ class CompDistMult(CompositionalKBScoringModel):
 
 
 class CompModelE(CompositionalKBScoringModel):
+    def _init_inputs(self):
+        self._rel_input = tf.placeholder(tf.float32, shape=[None, 2*self._size], name="rel")
+        self._subj_input = tf.placeholder(tf.int64, shape=[None], name="subj")
+        self._obj_input = tf.placeholder(tf.int64, shape=[None], name="obj")
+        self._subj_in = np.zeros([self._batch_size], dtype=np.int64)
+        self._obj_in = np.zeros([self._batch_size], dtype=np.int64)
+        self._rel_in = np.zeros([self._batch_size, 2*self._size], dtype=np.float32)
+        self._feed_dict = {}
+
     def _scoring_f(self):
         with tf.device("/cpu:0"):
             E_subjs = tf.get_variable("E_s", [len(self._kb.get_symbols(1)), self._size])
             E_objs = tf.get_variable("E_o", [len(self._kb.get_symbols(2)), self._size])
 
-        self.e_rel_s, self.e_rel_o = tf.split(1,2,self._rel_input)
+        self.e_rel_s, self.e_rel_o = tf.split(1, 2, self._rel_input)
 
         self.e_subj = tf.tanh(tf.nn.embedding_lookup(E_subjs, self._subj_input))
         self.e_obj = tf.tanh(tf.nn.embedding_lookup(E_objs, self._obj_input))
