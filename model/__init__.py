@@ -55,5 +55,9 @@ def create_model(kb, size, batch_size, is_train=True, num_neg=200, learning_rate
                 raise NameError("There is no model with type %s. "
                                 "Possible values are 'ModelF', 'DistMult', 'ModelE', 'ModelO', 'ModelN'." % type)
     else:
-        return CombinedModel(type, kb, size, batch_size, is_train, num_neg,
-                             learning_rate, l2_lambda, is_batch_training, composition)
+        if composition:
+            return CompCombinedModel(type, kb, size, batch_size, is_train, num_neg,
+                                     learning_rate, l2_lambda, is_batch_training, composition)
+        else:
+            return CombinedModel(type, kb, size, batch_size, is_train, num_neg,
+                                 learning_rate, l2_lambda, is_batch_training, composition)

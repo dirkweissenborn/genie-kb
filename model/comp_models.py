@@ -408,3 +408,65 @@ class CompModelE(CompositionalKBScoringModel):
         score = tf_util.dot(self.e_rel_s, self.e_subj) + tf_util.dot(self.e_rel_o, self.e_obj)
 
         return score
+
+
+class CompCombinedModel(CompositionalKBScoringModel):
+
+    def __init__(self, models, kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2, l2_lambda=0.0,
+                 is_batch_training=False, composition=None, share_vars=False):
+        self._models = []
+        self.__name = '_'.join(models)
+        if composition:
+            self.__name = composition + "__" + self.__name
+        with vs.variable_scope(self.name()):
+            for m in models:
+                self._models.append(model.create_model(kb, size, batch_size, False, num_neg, learning_rate,
+                                                       l2_lambda, False, composition=composition, type=m))
+
+        AbstractKBScoringModel.__init__(self, kb, size, batch_size, is_train, num_neg, learning_rate,
+                                        l2_lambda, is_batch_training)
+
+    def name(self):
+        return self.__name
+
+    def _scoring_f(self):
+        weights = map(lambda _: tf.Variable(float(1)), xrange(len(self._models)-1))
+        scores = [self._models[0]._scores]
+        for i in xrange(len(self._models)-1):
+            scores.append(self._models[i+1]._scores * weights[i])
+        return tf.reduce_sum(tf.pack(scores), 0)
+
+    def _add_triple_to_input(self, t, j):
+        for m in self._models:
+            m._add_triple_to_input(t, j)
+
+    def _finish_adding_triples(self, batch_size):
+        self._rels = []
+        for m in self._models:
+            m._finish_adding_triples(batch_size)
+            self._feed_dict.update(m._get_feed_dict())
+            if m._rels:
+                self._rels.extend(m._rels)
+
+    def _start_adding_triples(self):
+        for m in self._models:
+            m._start_adding_triples()
+
+    def _input_params(self):
+        ips = []
+        for m in self._models:
+            ips.extend(m._input_params())
+        return ips
+
+    def _composition_forward(self, sess):
+        for m in self._models:
+            m._composition_forward(sess)
+
+    def _composition_backward(self, sess, grads):
+        i = 0
+        for m in self._models:
+            inp_params = m._input_params()
+            if inp_params:
+                j = len(inp_params)
+                m._composition_backward(sess, grads[i:i+j])
+                i += j

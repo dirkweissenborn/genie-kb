@@ -153,7 +153,9 @@ with tf.Session() as sess:
         loss += model.step(sess, pos, negs, mode)
         step_time += (time.time() - start_time)
 
-        sys.stdout.write("\r%.1f%%" % (float((i-1) % FLAGS.ckpt_its + 1.0)*100.0 / FLAGS.ckpt_its))
+        sys.stdout.write("\r%.1f%% Loss: %.3f" %
+                         (float((i-1) % FLAGS.ckpt_its + 1.0)*100.0 / FLAGS.ckpt_its,
+                          loss / float((i-1) % FLAGS.ckpt_its + 1.0)))
         sys.stdout.flush()
 
         if end_of_epoch:
