@@ -133,14 +133,16 @@ with tf.Session() as sess:
 
     checkpoint_path = os.path.join(train_dir, "model.ckpt")
 
+    end_of_epoch = False
     def sample_next_batch():
         if FLAGS.kb_only or random.random() >= FLAGS.sample_text_prob:
             return fact_sampler.get_batch_async()
         else:
+            end_of_epoch = False
             return text_sampler.get_batch_async()
 
     next_batch = sample_next_batch()
-    end_of_epoch = False
+
     while FLAGS.max_iterations < 0 or i < FLAGS.max_iterations:
         i += 1
         start_time = time.time()

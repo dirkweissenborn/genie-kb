@@ -67,7 +67,8 @@ def split_relations(rel):
                 c = i+2
         return dep_path_arr
     else:
-        return rel.split("/")
+        return [rel]  # rel.split("/")
+
 
 def _load_dep_paths(fn, kb, typ="train"):
     with open(fn) as f:
