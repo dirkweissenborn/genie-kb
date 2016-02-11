@@ -47,7 +47,9 @@ def _load_triples(fn, kb, typ="train"):
 
 
 def split_relations(rel):
-    if "[XXX]" in rel:
+    if rel.endswith("_inv"):
+        return split_relations(rel[:-4]).reverse()
+    elif "[XXX]" in rel:
         dep_path_arr = []
         c = 0
         for i in xrange(len(rel)-2):

@@ -410,6 +410,99 @@ class CompModelE(CompositionalKBScoringModel):
         return score
 
 
+class CompModelO(CompositionalKBScoringModel):
+
+    def __init__(self, kb, size, batch_size, comp_model, is_train=True, num_neg=200, learning_rate=1e-2,
+                 which_sets=["train_text"]):
+        self._which_sets = set(which_sets)
+        CompositionalKBScoringModel.__init__(self, kb, size, batch_size, comp_model, is_train=True, num_neg=200, learning_rate=1e-2)
+
+    def _init_inputs(self):
+        self._rel_ids = dict()
+        len(self._kb.get_symbols(0))
+        # create tuple to rel lookup
+        self._tuple_rels_lookup = dict()
+        for (rel, subj, obj), _, typ in self._kb.get_all_facts():
+            if typ in self._which_sets:
+                s_i = self._kb.get_id(subj, 1)
+                o_i = self._kb.get_id(obj, 2)
+                t = (s_i, o_i)
+                if t not in self._tuple_rels_lookup:
+                    self._tuple_rels_lookup[t] = [rel]
+                else:
+                    self._tuple_rels_lookup[t].append(rel)
+                t = (o_i, s_i)
+                if t not in self._tuple_rels_lookup:
+                    self._tuple_rels_lookup[t] = [rel+"_inv"]
+                else:
+                    self._tuple_rels_lookup[t].append(rel+"_inv")
+
+        self._rel_input = tf.placeholder(tf.int64, shape=[None, self._size], name="rel")
+        self._rel_in = np.zeros([self._batch_size, self._size], dtype=np.float32)
+        self._observed_input = tf.placeholder(tf.int64, shape=[None, self._size], name="observed")
+        self._observed_in = np.zeros([self._batch_size, self._size], dtype=np.float32)
+        self._feed_dict = {}
+
+    def _start_adding_triples(self):
+        self._max_cols = 1
+        self._rels = []
+        self.__offsets = []
+
+    def _add_triple_to_input(self, t, j):
+        self.__offsets.append(len(self._rels))
+        (rel, subj, obj) = t
+        self._rels.append(rel)
+        s_i = self._kb.get_id(subj, 1)
+        o_i = self._kb.get_id(obj, 2)
+        rels = self._tuple_rels_lookup.get((s_i, o_i))
+        if rels:
+            for i in xrange(len(rels)):
+                if rels[i] != rel:
+                    self._rels.append(rels[i])
+        rels = self._tuple_inv_rels_lookup.get((s_i, o_i))
+        if rels:
+            for i in xrange(len(rels)):
+                if rels[i] != rel:
+                    self._rels.append(rels[i])
+
+    def _finish_adding_triples(self, batch_size):
+        if batch_size < self._batch_size:
+            self._feed_dict[self._rel_input] = self._rel_in[:batch_size]
+            self._feed_dict[self._observed_input] = self._observed_in[:batch_size]
+        else:
+            self._feed_dict[self._rel_input] = self._rel_in
+            self._feed_dict[self._observed_input] = self._observed_in
+
+    def _scoring_f(self):
+        return tf_util.dot(self._rel_input, self._observed_input)
+
+    def _input_params(self):
+        return [self._rel_input, self._observed_input]
+
+    def _composition_forward(self, sess):
+        rel_embeddings = self._comp_model.forward(sess, self._rels)
+        for b, off in enumerate(self.__offsets):
+            self._rel_in[b] = rel_embeddings[off]
+            end = self.__offsets[b+1] if len(self.__offsets) > (b+1) else len(self._rels)
+            self._observed_in[b] *= 0.0
+            for i in xrange(off+1, end):
+                self._observed_in[b] += rel_embeddings[i]
+            if (end-off-1) > 0:
+                self._observed_in[b] /= (end-off-1)
+
+    def _composition_backward(self, sess, grads):
+        grad_list = []
+        for b, off in enumerate(self.__offsets):
+            grad_list.append(grads[0][b])
+            end = self.__offsets[b+1] if len(self.__offsets) > (b+1) else len(self._rels)
+            observed_grad = grads[1][b]
+            if (end-off-1) > 0:
+                observed_grad /= (end-off-1)
+            for i in xrange(off+1, end):
+                grad_list.append(observed_grad)
+        self._comp_model.backward(sess, grad_list)
+
+
 class CompCombinedModel(CompositionalKBScoringModel):
 
     def __init__(self, models, kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2, l2_lambda=0.0,
