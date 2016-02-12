@@ -415,7 +415,8 @@ class CompModelO(CompositionalKBScoringModel):
     def __init__(self, kb, size, batch_size, comp_model, is_train=True, num_neg=200, learning_rate=1e-2,
                  which_sets=["train_text"]):
         self._which_sets = set(which_sets)
-        CompositionalKBScoringModel.__init__(self, kb, size, batch_size, comp_model, is_train=True, num_neg=200, learning_rate=1e-2)
+        CompositionalKBScoringModel.__init__(self, kb, size, batch_size, comp_model, is_train=True, num_neg=200,
+                                             learning_rate=1e-2)
 
     def _init_inputs(self):
         self._rel_ids = dict()

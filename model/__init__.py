@@ -48,7 +48,10 @@ def create_model(kb, size, batch_size, is_train=True, num_neg=200, learning_rate
                 else:
                     return ModelE(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
             elif type == "ModelO":
-                return ModelO(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training, observed_sets)
+                if composition:
+                    return CompModelO(kb, size, batch_size, composition, is_train, num_neg, learning_rate, observed_sets)
+                else:
+                    return ModelO(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training, observed_sets)
             elif type == "ModelN":
                 return ModelN(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training, observed_sets)
             else:
