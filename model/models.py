@@ -83,8 +83,9 @@ class AbstractKBScoringModel:
                     else:
                         self._grads = tf.gradients(self._loss, train_params + in_params, self.training_weight)
                         self._input_grads = self._grads[len(train_params):]
-                    self._update = self.opt.apply_gradients(zip(self._grads[:len(train_params)], train_params),
-                                                            global_step=self.global_step)
+                    if len(train_params) > 0:
+                        self._update = self.opt.apply_gradients(zip(self._grads[:len(train_params)], train_params),
+                                                                global_step=self.global_step)
 
             if l2_lambda > 0.0:
                 l2 = tf.reduce_sum(array_ops.pack([tf.nn.l2_loss(t) for t in train_params]))
@@ -165,7 +166,7 @@ class AbstractKBScoringModel:
         :param mode: default(train)|loss|accumulate(used for batch training)
         :return:
         '''
-        assert self._update, "model has to be created in training mode!"
+        assert self._is_train or self._is_batch_training, "model has to be created in training mode!"
 
         assert len(pos_triples) + reduce(lambda acc, x: acc+len(x), neg_triples, 0) == self._batch_size, \
             "batch_size and provided batch do not fit"
@@ -188,7 +189,6 @@ class AbstractKBScoringModel:
             sess.run([self._accumulate_gradients, self._acc_loss], feed_dict=self._get_feed_dict())
             return 0.0
         else:
-            assert self._is_train or self._is_batch_training, "training only possible in training state."
             return sess.run([self._loss, self._update], feed_dict=self._get_feed_dict())[0]
 
     def acc_l2_gradients(self, sess):

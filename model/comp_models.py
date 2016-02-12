@@ -343,7 +343,7 @@ class CompositionalKBScoringModel(AbstractKBScoringModel):
         :param mode: default(train)|loss|accumulate(used for batch training)
         :return:
         '''
-        assert self._update, "model has to be created in training mode!"
+        assert self._is_train, "model has to be created in training mode!"
 
         assert len(pos_triples) + reduce(lambda acc, x: acc+len(x), neg_triples, 0) == self._batch_size, \
             "batch_size and provided batch do not fit"
@@ -364,8 +364,12 @@ class CompositionalKBScoringModel(AbstractKBScoringModel):
             return sess.run(self._loss, feed_dict=self._get_feed_dict())
         else:
             assert self._is_train, "training only possible in training state."
-            res = sess.run([self._loss, self._update] + self._input_grads, feed_dict=self._get_feed_dict())
-            self._composition_backward(sess, res[2:])
+            if hasattr(self, "_update"):
+                res = sess.run([self._loss, self._update] + self._input_grads, feed_dict=self._get_feed_dict())
+                self._composition_backward(sess, res[2:])
+            else:
+                res = sess.run([self._loss] + self._input_grads, feed_dict=self._get_feed_dict())
+                self._composition_backward(sess, res[1:])
             return res[0]
 
 
@@ -438,9 +442,9 @@ class CompModelO(CompositionalKBScoringModel):
                 else:
                     self._tuple_rels_lookup[t].append(rel+"_inv")
 
-        self._rel_input = tf.placeholder(tf.int64, shape=[None, self._size], name="rel")
+        self._rel_input = tf.placeholder(tf.float32, shape=[None, self._size], name="rel")
         self._rel_in = np.zeros([self._batch_size, self._size], dtype=np.float32)
-        self._observed_input = tf.placeholder(tf.int64, shape=[None, self._size], name="observed")
+        self._observed_input = tf.placeholder(tf.float32, shape=[None, self._size], name="observed")
         self._observed_in = np.zeros([self._batch_size, self._size], dtype=np.float32)
         self._feed_dict = {}
 
