@@ -445,7 +445,6 @@ class CompModelO(CompositionalKBScoringModel):
         self._feed_dict = {}
 
     def _start_adding_triples(self):
-        self._max_cols = 1
         self._rels = []
         self.__offsets = []
 
@@ -456,11 +455,6 @@ class CompModelO(CompositionalKBScoringModel):
         s_i = self._kb.get_id(subj, 1)
         o_i = self._kb.get_id(obj, 2)
         rels = self._tuple_rels_lookup.get((s_i, o_i))
-        if rels:
-            for i in xrange(len(rels)):
-                if rels[i] != rel:
-                    self._rels.append(rels[i])
-        rels = self._tuple_inv_rels_lookup.get((s_i, o_i))
         if rels:
             for i in xrange(len(rels)):
                 if rels[i] != rel:
