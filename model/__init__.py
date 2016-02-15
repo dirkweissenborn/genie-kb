@@ -1,5 +1,6 @@
 import tensorflow as tf
 from models import *
+from comp_scoring_models import *
 from comp_models import *
 from data.load_fb15k237 import split_relations
 
@@ -17,7 +18,9 @@ def create_model(kb, size, batch_size, is_train=True, num_neg=200, learning_rate
     :return: Model(s) of type "type"
     '''
     if not isinstance(type, list):
-        with vs.variable_scope(type):
+        if not composition:
+            composition = ""
+        with vs.variable_scope(type+"_" + composition):
             comp_size = 2*size if type == "ModelE" else size
             if composition == "Tanh":
                 composition = TanhRNNCompModel(kb, comp_size, num_buckets, split_relations, batch_size/(num_neg+1), learning_rate)
@@ -35,28 +38,34 @@ def create_model(kb, size, batch_size, is_train=True, num_neg=200, learning_rate
                 composition = CompositionModel(kb, comp_size, num_buckets, split_relations, batch_size/(num_neg+1), learning_rate)
             else:
                 composition = None
-            if type == "ModelF":
-                return ModelF(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
-            elif type == "DistMult":
-                if composition:
-                    return CompDistMult(kb, size, batch_size, composition, is_train, num_neg, learning_rate)
-                else:
-                    return DistMult(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
-            elif type == "ModelE":
-                if composition:
-                    return CompModelE(kb, size, batch_size, composition, is_train, num_neg, learning_rate)
-                else:
-                    return ModelE(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
-            elif type == "ModelO":
-                if composition:
-                    return CompModelO(kb, size, batch_size, composition, is_train, num_neg, learning_rate, observed_sets)
-                else:
-                    return ModelO(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training, observed_sets)
-            elif type == "ModelN":
-                return ModelN(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training, observed_sets)
+
+        if type == "ModelF":
+            return ModelF(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
+        elif type == "DistMult":
+            if composition:
+                return CompDistMult(kb, size, batch_size, composition, is_train, num_neg, learning_rate)
             else:
-                raise NameError("There is no model with type %s. "
-                                "Possible values are 'ModelF', 'DistMult', 'ModelE', 'ModelO', 'ModelN'." % type)
+                return DistMult(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
+        elif type == "ModelE":
+            if composition:
+                return CompModelE(kb, size, batch_size, composition, is_train, num_neg, learning_rate)
+            else:
+                return ModelE(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
+        elif type == "ModelO":
+            if composition:
+                return CompModelO(kb, size, batch_size, composition, is_train, num_neg, learning_rate, observed_sets)
+            else:
+                return ModelO(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training, observed_sets)
+        elif type == "WeightedModelO":
+            if composition:
+                return CompWeightedModelO(kb, size, batch_size, composition, is_train, num_neg, learning_rate, observed_sets)
+            else:
+                return WeightedModelO(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training, observed_sets)
+        elif type == "ModelN":
+            return ModelN(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training, observed_sets)
+        else:
+            raise NameError("There is no model with type %s. "
+                            "Possible values are 'ModelF', 'DistMult', 'ModelE', 'ModelO', 'ModelN'." % type)
     else:
         if composition:
             return CompCombinedModel(type, kb, size, batch_size, is_train, num_neg,
@@ -64,3 +73,18 @@ def create_model(kb, size, batch_size, is_train=True, num_neg=200, learning_rate
         else:
             return CombinedModel(type, kb, size, batch_size, is_train, num_neg,
                                  learning_rate, l2_lambda, is_batch_training, composition)
+
+
+@tf.ops.RegisterGradient("SparseToDense")
+def _tf_sparse_to_dense_grad(op, grad):
+    grad_flat = tf.reshape(grad, [-1])
+    sparse_indices = op.inputs[0]
+    d = tf.gather(tf.shape(sparse_indices), [0])
+    shape = op.inputs[1]
+    cols = tf.gather(shape, [1])
+    ones = tf.expand_dims(tf.ones(d, dtype=tf.int64), 1)
+    cols = ones * cols
+    conc = tf.concat(1, [cols, ones])
+    sparse_indices = tf.reduce_sum(tf.mul(sparse_indices, conc), 1)
+    in_grad = tf.nn.embedding_lookup(grad_flat, sparse_indices)
+    return None, None, in_grad, None

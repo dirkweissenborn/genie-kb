@@ -19,20 +19,18 @@ class AbstractKBScoringModel:
         self._batch_size = batch_size
         self._is_batch_training = is_batch_training
         self._is_train = is_train
-
-        self.learning_rate = tf.Variable(float(learning_rate), trainable=False, name="lr")
-        self.global_step = tf.Variable(0, trainable=False, name="step")
-        with tf.device("/cpu:0"):
-            if is_batch_training:
-                self.opt = rprop.RPropOptimizer()  # tf.train.GradientDescentOptimizer(self.learning_rate)
-            else:
-                self.opt = tf.train.AdamOptimizer(self.learning_rate, beta1=0.0)
         self._init = model.default_init()
-
-        self._init_inputs()
-
-        with vs.variable_scope("score", initializer=self._init):
-            self._scores = self._scoring_f()
+        with vs.variable_scope(self.name(), initializer=self._init):
+            self.learning_rate = tf.Variable(float(learning_rate), trainable=False, name="lr")
+            self.global_step = tf.Variable(0, trainable=False, name="step")
+            with tf.device("/cpu:0"):
+                if is_batch_training:
+                    self.opt = rprop.RPropOptimizer()  # tf.train.GradientDescentOptimizer(self.learning_rate)
+                else:
+                    self.opt = tf.train.AdamOptimizer(self.learning_rate, beta1=0.0)
+            self._init_inputs()
+            with vs.variable_scope("score", initializer=self._init):
+                self._scores = self._scoring_f()
 
         if is_train or is_batch_training:
             assert batch_size % (num_neg+1) == 0, "Batch size must be multiple of num_neg+1 during training"
@@ -218,7 +216,7 @@ class DistMult(AbstractKBScoringModel):
         self.e_rel = tf.sigmoid(tf.nn.embedding_lookup(E_rels, self._rel_input))
         s_o_prod = self.e_obj * self.e_subj
 
-        score = tf_util.dot(self.e_rel, s_o_prod)
+        score = tf_util.batch_dot(self.e_rel, s_o_prod)
 
         return score
 
@@ -237,7 +235,7 @@ class ModelE(AbstractKBScoringModel):
         self.e_rel_s = tf.tanh(tf.nn.embedding_lookup(E_rels_s, self._rel_input))
         self.e_rel_o = tf.tanh(tf.nn.embedding_lookup(E_rels_o, self._rel_input))
 
-        score = tf_util.dot(self.e_rel_s, self.e_subj) + tf_util.dot(self.e_rel_o, self.e_obj)
+        score = tf_util.batch_dot(self.e_rel_s, self.e_subj) + tf_util.batch_dot(self.e_rel_o, self.e_obj)
 
         return score
 
@@ -268,7 +266,7 @@ class ModelO(AbstractKBScoringModel):
                 else:
                     self._tuple_rels_lookup[t].append(r_i)
 
-        self.__num_relations = len(self._rel_ids)
+        self._num_relations = len(self._rel_ids)
 
         #also add inverse relations to tuples
         for (rel, subj, obj), _, typ in self._kb.get_all_facts():
@@ -277,7 +275,7 @@ class ModelO(AbstractKBScoringModel):
                     self._rel_ids[rel] = len(self._rel_ids)
                 s_i = self._kb.get_id(subj, 1)
                 o_i = self._kb.get_id(obj, 2)
-                r_i = self._rel_ids[rel] + self.__num_relations
+                r_i = self._rel_ids[rel] + self._num_relations
                 t = (o_i, s_i)
                 if t not in self._tuple_rels_lookup:
                     self._tuple_rels_lookup[t] = [r_i]
@@ -314,7 +312,7 @@ class ModelO(AbstractKBScoringModel):
             self._sparse_indices.append([j, len(rels)])
         else:
             self._sparse_indices.append([j, 0])
-        self._sparse_values.append(2 * self.__num_relations)
+        self._sparse_values.append(2 * self._num_relations)
 
     def _finish_adding_triples(self, batch_size):
         self._feed_dict[self._sparse_indices_input] = self._sparse_indices
@@ -328,7 +326,7 @@ class ModelO(AbstractKBScoringModel):
     def _scoring_f(self):
         with tf.device("/cpu:0"):
            E_rels = tf.get_variable("E_r", [len(self._kb.get_symbols(0)), self._size])
-           E_tup_rels = tf.get_variable("E_tup_r", [2*self.__num_relations+1, self._size])  # rels + inv rels + default rel
+           E_tup_rels = tf.get_variable("E_tup_r", [2 * self._num_relations + 1, self._size])  # rels + inv rels + default rel
 
         self.e_rel = tf.tanh(tf.nn.embedding_lookup(E_rels, self._rel_input))
         # weighted sum of tuple rel embeddings
@@ -336,8 +334,36 @@ class ModelO(AbstractKBScoringModel):
         # mean embedding
         self.e_tuple_rels = tf.tanh(tf.nn.embedding_lookup_sparse(E_tup_rels, sparse_tensor, None))
 
-        return tf_util.dot(self.e_rel, self.e_tuple_rels)
+        return tf_util.batch_dot(self.e_rel, self.e_tuple_rels)
 
+
+class WeightedModelO(ModelO):
+
+    def _init_inputs(self):
+        ModelO._init_inputs(self)
+        self._gather_rels_input = tf.placeholder(tf.int64, name="gathered_rels")
+
+    def _finish_adding_triples(self, batch_size):
+        ModelO._finish_adding_triples(self, batch_size)
+        self._feed_dict[self._gather_rels_input] = map(lambda x: x[0], self._sparse_indices)
+
+    def _scoring_f(self):
+        with tf.device("/cpu:0"):
+           E_rels = tf.get_variable("E_r", [len(self._kb.get_symbols(0)), self._size])
+           E_tup_rels = tf.get_variable("E_tup_r", [2 * self._num_relations + 1, self._size])  # rels + inv rels + default rel
+
+        # duplicate rels to fit with observations
+        e_rel = tf.gather(tf.tanh(tf.nn.embedding_lookup(E_rels, self._rel_input)), self._gather_rels_input)
+        e_tup_rels = tf.tanh(tf.nn.embedding_lookup(E_tup_rels, self._sparse_values_input))
+
+        scores_flat = tf_util.batch_dot(e_rel, e_tup_rels)
+        # for softmax set empty cells to something very small, so weight becomes practically zero
+        scores = tf.sparse_to_dense(self._sparse_indices_input, self._shape_input,
+                                    scores_flat, default_value=-1e-3)
+        softmax = tf.nn.softmax(scores)
+        weighted_scores = tf.reduce_sum(scores * softmax, reduction_indices=[1], keep_dims=False)
+
+        return weighted_scores
 
 class ModelN(ModelO):
 
@@ -376,11 +402,11 @@ class ModelN(ModelO):
 
     def _scoring_f(self):
         with tf.device("/cpu:0"):
-           E_link_feat_weights = tf.get_variable("E_tup_r", [len(self._rel_cooc_lookup) + 1, 1])
+           E_neighbour_weights = tf.get_variable("E_tup_r", [len(self._rel_cooc_lookup) + 1, 1])
 
         # weighted sum of tuple rel embeddings
         sparse_tensor = tf.SparseTensor(self._sparse_indices_input, self._sparse_values_input, self._shape_input)
-        score = tf.reshape(tf.nn.embedding_lookup_sparse(E_link_feat_weights, sparse_tensor, None), [-1])
+        score = tf.reshape(tf.nn.embedding_lookup_sparse(E_neighbour_weights, sparse_tensor, None), [-1])
 
         return score
 
@@ -428,7 +454,7 @@ class ModelF(AbstractKBScoringModel):
         self.e_rel = tf.tanh(tf.nn.embedding_lookup(E_rels, self._rel_input))
         self.e_tup = tf.tanh(tf.nn.embedding_lookup(E_tups, self._tuple_input))
 
-        return tf_util.dot(self.e_rel, self.e_tup)
+        return tf_util.batch_dot(self.e_rel, self.e_tup)
 
 
 class CombinedModel(AbstractKBScoringModel):
@@ -471,8 +497,3 @@ class CombinedModel(AbstractKBScoringModel):
         for m in self._models:
             m._start_adding_triples()
         self._feed_dict = dict()
-
-    def _input_params(self):
-        ips = []
-        for m in self._models:
-            ips.extend(m._input_params())
