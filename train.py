@@ -197,8 +197,7 @@ with tf.Session() as sess:
             else:
                 raise ValueError("valid_mode flag must be either 'a','t' or 'nt'")
 
-            # Decrease learning rate if no improvement was seen over last 2 times.
-            if len(previous_mrrs) > 2 and mrr <= min(previous_mrrs[-2:])+1e-4:
+            if e >= 1 and len(previous_mrrs) > 2 and mrr <= min(previous_mrrs[-2:])+1e-4:
                 print "Stop learning!"
                 break
                 #lr = model.learning_rate.eval()
@@ -211,7 +210,7 @@ with tf.Session() as sess:
             mrr2modelpath[mrr] = path
             print "####################################"
 
-    best_valid_mrr = max(previous_mrrs)
+    best_valid_mrr = max(previous_mrrs[-5:])
     print("Restore model to best on validation, with MRR: %.3f" % best_valid_mrr)
     model.saver.restore(sess, mrr2modelpath[best_valid_mrr])
     model_name = mrr2modelpath[best_valid_mrr].split("/")[-1]
