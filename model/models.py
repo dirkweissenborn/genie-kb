@@ -432,7 +432,8 @@ class ModelN(ModelO):
 
         # weighted sum of tuple rel embeddings
         sparse_tensor = tf.SparseTensor(self._sparse_indices_input, self._sparse_values_input, self._shape_input)
-        score = tf.reshape(tf.nn.embedding_lookup_sparse(E_neighbour_weights, sparse_tensor, None), [-1])
+        score = tf.nn.embedding_lookup_sparse(E_neighbour_weights, sparse_tensor, None, combiner="sum")
+        score = tf.reshape(score, [-1])
 
         return score
 
