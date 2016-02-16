@@ -95,7 +95,7 @@ class AbstractKBScoringModel:
                 else:
                     self._l2_update = tf.train.GradientDescentOptimizer(self.learning_rate).minimize(l2_loss, var_list=train_params)
 
-        self.saver = tf.train.Saver(tf.all_variables())
+        self.saver = tf.train.Saver(tf.all_variables(), max_to_keep=2)
 
     def _input_params(self):
         return None

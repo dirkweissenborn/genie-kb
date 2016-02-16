@@ -61,8 +61,6 @@ class KB:
      True
      """
 
-    random.seed(0)
-
     def __init__(self):
         # holds all known facts for every arity
         self.__facts = {}

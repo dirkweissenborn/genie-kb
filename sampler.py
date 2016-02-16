@@ -92,7 +92,7 @@ class BatchNegTypeSampler:
             raise StopIteration
         return self.get_batch()
 
-    def __get_neg_examples(self, triple, position):
+    def __get_neg_examples(self, triple, position, rng):
         (rel, subj, obj) = triple
         dim = 2 if position == "obj" else 1
         #allowed = self.kb.get_symbols(dim)
@@ -139,7 +139,7 @@ class BatchNegTypeSampler:
             for _ in xrange(self.neg_per_pos):
                 x = None
                 while not x or x == disallowed or self.kb.contains_fact(True, "train", rel, x, obj):
-                    i = random.randint(0, last)
+                    i = rng.randint(0, last)
                     x = neg_candidates[i]
                     # remove candidate efficiently from candidates
                     if neg_candidates is not self._subjs:  # do not change self._subjs
@@ -167,15 +167,18 @@ class BatchNegTypeSampler:
 
         if position == "both":
             negs = self.__pool.map(
-                lambda i: self.__get_neg_examples(pos[i], "obj") if i < self.pos_per_batch else
-                self.__get_neg_examples(pos[i], "subj"),
-                xrange(self.pos_per_batch*2))
+                lambda (i, seed): self.__get_neg_examples(pos[i], "obj", random.Random(seed))
+                if i < self.pos_per_batch else
+                self.__get_neg_examples(pos[i], "subj", random.Random(seed)),
+                ((i, random.randint(0, 1000)) for i in xrange(self.pos_per_batch*2)))
 
         if position == "subj":
-            negs = self.__pool.map(lambda fact: self.__get_neg_examples(fact, "subj"), pos)
+            negs = self.__pool.map(lambda (fact, seed): self.__get_neg_examples(fact, "subj", random.Random(seed)),
+                                   ((fact, random.randint(0, 1000)) for fact in pos))
 
         if position == "obj":
-            negs = self.__pool.map(lambda fact: self.__get_neg_examples(fact, "obj"), pos)
+            negs = self.__pool.map(lambda (fact, seed): self.__get_neg_examples(fact, "obj", random.Random(seed)),
+                                   ((fact, random.randint(0, 1000)) for fact in pos))
 
         return pos, negs
 
