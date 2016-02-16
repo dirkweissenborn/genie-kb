@@ -303,7 +303,7 @@ class ModelO(AbstractKBScoringModel):
         rels = self._tuple_rels_lookup.get((s_i, o_i))
         if rels:
             for i in xrange(len(rels)):
-                if rels[i] != r_i:
+                if rels[i] != self._rel_ids.get(rel):
                     self._sparse_indices.append([j, i])
                     self._sparse_values.append(rels[i])
             self._max_cols = max(self._max_cols, len(rels) + 1)
@@ -364,6 +364,7 @@ class WeightedModelO(ModelO):
 
         return weighted_scores
 
+
 class BlurWeightedModelO(WeightedModelO):
 
     def _scoring_f(self):
@@ -386,27 +387,30 @@ class BlurWeightedModelO(WeightedModelO):
 
         return weighted_scores
 
-class ModelN(ModelO):
 
-    def __init__(self, kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2, l2_lambda=0.0,
-                 is_batch_training=False):
-        ModelO.__init__(self, kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2,
-                        l2_lambda=0.0, is_batch_training=False, which_sets=["train", "train_text"])
+class ModelN(ModelO):
 
     def _init_inputs(self):
         ModelO._init_inputs(self)
         self._rel_cooc_lookup = dict()
-        for tup, rels in self._tuple_rels_lookup.iteritems():
-            for rel in rels:
+        for (rel, subj, obj), _, typ in self._kb.get_all_facts():
+            s_i = self._kb.get_id(subj, 1)
+            o_i = self._kb.get_id(obj, 2)
+            if rel not in self._rel_ids:
+                self._rel_ids[rel] = len(self._rel_ids)
+            r_i = self._rel_ids[rel]
+            t = (s_i, o_i)
+            rels = self._tuple_rels_lookup.get(t)
+            if rels:
                 for rel2 in rels:
-                    if rel != rel2:
-                        rel_cooc = (rel, rel2)
+                    if r_i != rel2:
+                        rel_cooc = (r_i, rel2)
                         if rel_cooc not in self._rel_cooc_lookup:
                             self._rel_cooc_lookup[rel_cooc] = len(self._rel_cooc_lookup)
 
     def _add_triple_to_input(self, t, j):
         (rel, subj, obj) = t
-        r_i = self._kb.get_id(rel, 0)
+        r_i = self._rel_ids.get(rel, 0)
         self._rel_in[j] = r_i
         s_i = self._kb.get_id(subj, 1)
         o_i = self._kb.get_id(obj, 2)
