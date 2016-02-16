@@ -250,7 +250,6 @@ class ModelO(AbstractKBScoringModel):
 
     def _init_inputs(self):
         self._rel_ids = dict()
-        len(self._kb.get_symbols(0))
         # create tuple to rel lookup
         self._tuple_rels_lookup = dict()
         for (rel, subj, obj), _, typ in self._kb.get_all_facts():
@@ -365,7 +364,34 @@ class WeightedModelO(ModelO):
 
         return weighted_scores
 
+class BlurWeightedModelO(WeightedModelO):
+
+    def _scoring_f(self):
+        with tf.device("/cpu:0"):
+            E_rels = tf.get_variable("E_r", [len(self._kb.get_symbols(0)), self._size])
+            E_tup_rels = tf.get_variable("E_tup_r", [2 * self._num_relations + 1, self._size])  # rels + inv rels + default rel
+
+        blur_factor = tf.get_variable("blur", shape=[1], initializer=tf.constant_initializer(0.0))
+        blur_factor = tf.sigmoid(blur_factor)
+        # duplicate rels to fit with observations
+        e_rel = tf.gather(tf.tanh(tf.nn.embedding_lookup(E_rels, self._rel_input)), self._gather_rels_input)
+        e_tup_rels = tf.tanh(tf.nn.embedding_lookup(E_tup_rels, self._sparse_values_input))
+
+        scores_flat = tf_util.batch_dot(e_rel, e_tup_rels)
+        # for softmax set empty cells to something very small, so weight becomes practically zero
+        scores = tf.sparse_to_dense(self._sparse_indices_input, self._shape_input,
+                                    scores_flat, default_value=-1e-3)
+        softmax = tf.nn.softmax(scores * blur_factor)
+        weighted_scores = tf.reduce_sum(scores * softmax, reduction_indices=[1], keep_dims=False)
+
+        return weighted_scores
+
 class ModelN(ModelO):
+
+    def __init__(self, kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2, l2_lambda=0.0,
+                 is_batch_training=False):
+        ModelO.__init__(self, kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2,
+                        l2_lambda=0.0, is_batch_training=False, which_sets=["train", "train_text"])
 
     def _init_inputs(self):
         ModelO._init_inputs(self)
