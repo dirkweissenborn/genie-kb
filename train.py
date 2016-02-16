@@ -136,9 +136,9 @@ with tf.Session() as sess:
     end_of_epoch = False
     def sample_next_batch():
         if FLAGS.kb_only or random.random() >= FLAGS.sample_text_prob:
+            end_of_epoch = False
             return fact_sampler.get_batch_async()
         else:
-            end_of_epoch = False
             return text_sampler.get_batch_async()
 
     next_batch = sample_next_batch()
@@ -147,7 +147,7 @@ with tf.Session() as sess:
         i += 1
         start_time = time.time()
         pos, negs = next_batch.get()
-        end_of_epoch = fact_sampler.end_of_epoch()
+        end_of_epoch = not end_of_epoch and fact_sampler.end_of_epoch()
         current_ct = fact_sampler.count
         # already fetch next batch parallel to running model
         next_batch = sample_next_batch()
