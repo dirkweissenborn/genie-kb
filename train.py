@@ -136,7 +136,6 @@ with tf.Session() as sess:
     end_of_epoch = False
     def sample_next_batch():
         if FLAGS.kb_only or random.random() >= FLAGS.sample_text_prob:
-            end_of_epoch = False
             return fact_sampler.get_batch_async()
         else:
             return text_sampler.get_batch_async()
@@ -147,7 +146,7 @@ with tf.Session() as sess:
         i += 1
         start_time = time.time()
         pos, negs = next_batch.get()
-        end_of_epoch = not end_of_epoch and fact_sampler.end_of_epoch()
+        end_of_epoch = fact_sampler.end_of_epoch()
         current_ct = fact_sampler.count
         # already fetch next batch parallel to running model
         next_batch = sample_next_batch()
@@ -160,7 +159,7 @@ with tf.Session() as sess:
                           loss / float((i-1) % FLAGS.ckpt_its + 1.0)))
         sys.stdout.flush()
 
-        if end_of_epoch:
+        if end_of_epoch and not fact_sampler.end_of_epoch():
             print ""
             e += 1
             print "Epoch %d done!" % e
@@ -171,7 +170,7 @@ with tf.Session() as sess:
                 loss = model.update(sess)
                 model.reset_gradients_and_loss(sess)
 
-        if (end_of_epoch and FLAGS.batch_train) or (not FLAGS.batch_train and i % FLAGS.ckpt_its == 0):
+        if (end_of_epoch and not fact_sampler.end_of_epoch() and FLAGS.batch_train) or (not FLAGS.batch_train and i % FLAGS.ckpt_its == 0):
             if not FLAGS.batch_train:
                 loss /= FLAGS.ckpt_its
                 print ""

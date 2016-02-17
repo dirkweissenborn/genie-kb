@@ -411,7 +411,6 @@ class ModelN(ModelO):
     def _add_triple_to_input(self, t, j):
         (rel, subj, obj) = t
         r_i = self._rel_ids.get(rel, 0)
-        self._rel_in[j] = r_i
         s_i = self._kb.get_id(subj, 1)
         o_i = self._kb.get_id(obj, 2)
 
