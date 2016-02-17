@@ -1,7 +1,7 @@
 import tensorflow as tf
 from models import *
-from comp_scoring_models import *
 from comp_models import *
+from comp_functions import *
 from data.load_fb15k237 import split_relations
 
 def default_init():
@@ -23,19 +23,19 @@ def create_model(kb, size, batch_size, is_train=True, num_neg=200, learning_rate
         with vs.variable_scope(type+"_" + composition):
             comp_size = 2*size if type == "ModelE" else size
             if composition == "Tanh":
-                composition = TanhRNNCompModel(kb, comp_size, num_buckets, split_relations, batch_size/(num_neg+1), learning_rate)
+                composition = TanhRNNCompF(kb, comp_size, num_buckets, split_relations, batch_size / (num_neg + 1), learning_rate)
             elif composition == "LSTM":
-                composition = LSTMCompModel(kb, comp_size, num_buckets, split_relations, batch_size/(num_neg+1), learning_rate)
+                composition = LSTMCompF(kb, comp_size, num_buckets, split_relations, batch_size / (num_neg + 1), learning_rate)
             elif composition == "GRU":
-                composition = GRUCompModel(kb, comp_size, num_buckets, split_relations, batch_size/(num_neg+1), learning_rate)
+                composition = GRUCompF(kb, comp_size, num_buckets, split_relations, batch_size / (num_neg + 1), learning_rate)
             elif composition == "BiTanh":
-                composition = BiTanhRNNCompModel(kb, comp_size, num_buckets, split_relations, batch_size/(num_neg+1), learning_rate)
+                composition = BiTanhRNNCompF(kb, comp_size, num_buckets, split_relations, batch_size / (num_neg + 1), learning_rate)
             elif composition == "BiLSTM":
-                composition = BiLSTMCompModel(kb, comp_size, num_buckets, split_relations, batch_size/(num_neg+1), learning_rate)
+                composition = BiLSTMCompF(kb, comp_size, num_buckets, split_relations, batch_size / (num_neg + 1), learning_rate)
             elif composition == "BiGRU":
-                composition = BiGRUCompModel(kb, comp_size, num_buckets, split_relations, batch_size/(num_neg+1), learning_rate)
+                composition = BiGRUCompF(kb, comp_size, num_buckets, split_relations, batch_size / (num_neg + 1), learning_rate)
             elif composition == "BoW":
-                composition = CompositionModel(kb, comp_size, num_buckets, split_relations, batch_size/(num_neg+1), learning_rate)
+                composition = BoWCompF(kb, comp_size, num_buckets, split_relations, batch_size / (num_neg + 1), learning_rate)
             else:
                 composition = None
 

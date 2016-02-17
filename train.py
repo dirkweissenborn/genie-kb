@@ -14,15 +14,14 @@ from tensorflow.models.rnn.rnn_cell import *
 
 
 # data loading specifics
-tf.app.flags.DEFINE_string('fb15k_dir', None, 'data dir containing files of fb15k dataset')
-tf.app.flags.DEFINE_integer('max_vocab', -1, 'max num of symbols in vocab')
+tf.app.flags.DEFINE_string('fb15k_dir', None, 'data dir containing extracted files of fb15k dataset.')
 
 # model
 tf.app.flags.DEFINE_integer("size", 10, "hidden size of model")
 
 # training
 tf.app.flags.DEFINE_float("learning_rate", 1e-2, "Learning rate.")
-tf.app.flags.DEFINE_float("l2_lambda", 0, "L2-regularization rate.")
+tf.app.flags.DEFINE_float("l2_lambda", 0, "L2-regularization raten (only for batch training).")
 tf.app.flags.DEFINE_float("sample_text_prob", 0.935,
                           "Probability of sampling text triple (default is ratio of text (emnlp) to kb triples.")
 tf.app.flags.DEFINE_float("learning_rate_decay", 0.5, "Learning rate decay when loss on validation set does not improve.")
@@ -32,14 +31,14 @@ tf.app.flags.DEFINE_integer("max_iterations", -1, "Maximum number of batches dur
 tf.app.flags.DEFINE_integer("ckpt_its", -1, "Number of iterations until running checkpoint. Negative means after every epoch.")
 tf.app.flags.DEFINE_integer("random_seed", 1234, "Seed for rng.")
 tf.app.flags.DEFINE_integer("subsample_kb", -1, "num of entities in subsampled kb. if <= 0 use whole kb")
-tf.app.flags.DEFINE_boolean("kb_only", False, "Only train on kb relations.")
+tf.app.flags.DEFINE_boolean("kb_only", False, "Only load and train on FB relations, ignoring text.")
 tf.app.flags.DEFINE_boolean("batch_train", False, "Use batch training.")
 tf.app.flags.DEFINE_boolean("type_constraint", False, "Use type constraint during sampling.")
 tf.app.flags.DEFINE_string("save_dir", "save/" + time.strftime("%d%m%Y_%H%M%S", time.localtime()),
                            "Where to save model and its configuration, always last will be kept.")
 tf.app.flags.DEFINE_string("model", "DistMult",
                            "Model architecture or combination thereof split by comma of: "
-                           "'ModelF', 'DistMult', 'ModelE', 'ModelO'")
+                           "'ModelF', 'DistMult', 'ModelE', 'ModelO', 'ModelN', 'WeightedModelO'")
 tf.app.flags.DEFINE_string("observed_sets", "train_text", "Which sets to observe for observed models.")
 tf.app.flags.DEFINE_string("valid_mode", "a", "[a,t,nt] are possible. a- validate on all triples, "
                                               "t- validate only on triples with text mentions, "
