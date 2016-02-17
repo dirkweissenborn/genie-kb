@@ -2,11 +2,11 @@
 
 This repository contains implementations for a variety of AKBC 
 (Automatic Knowledge Base Completion) scoring models. In its 
-current version only scoring [models](model/models.py) for triples 
+current version only [scoring models](model/models.py) for triples 
 (subject, predicate, object) are supported.
 
-It also supports compositional scoring [models](model/comp_models.py)
-using various composition functions [models](model/comp_functions.py).
+It also supports [compositional scoring models](model/comp_models.py)
+using various [composition functions](model/comp_functions.py).
 
 Note: If you use this code or parts of it, please do not forget to cite.
 Paper will be out soon.
