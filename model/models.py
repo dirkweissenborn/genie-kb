@@ -55,36 +55,35 @@ class AbstractKBScoringModel:
 
             self.training_weight = tf.Variable(float(learning_rate), trainable=False, name="training_weight")
             self._feed_dict[self.training_weight] = np.array([1.0], dtype=np.float32)
-            with tf.device("/cpu:0"):
-                #clipped_gradients = _clip_by_value(self.grads, -max_grad, max_grad)
-                if is_batch_training:
-                    self._grads = tf.gradients(loss, train_params, self.training_weight)
-                    with vs.variable_scope("batch_gradient", initializer=self._init):
-                        self._acc_gradients = map(lambda param: tf.get_variable(param.name.split(":")[0],
-                                                                                param.get_shape(), param.dtype,
-                                                                                tf.constant_initializer(0.0), False),
-                                                  train_params)
-                    self._loss = tf.get_variable("acc_loss", (), tf.float32, tf.constant_initializer(0.0), False)
-                    # We abuse the gradient descent optimizer for accumulating gradients and loss (summing)
-                    acc_opt = tf.train.GradientDescentOptimizer(-1.0)
-                    self._accumulate_gradients = acc_opt.apply_gradients(zip(self._grads, self._acc_gradients))
-                    self._acc_loss = acc_opt.apply_gradients([(loss, self._loss)])
+            #clipped_gradients = _clip_by_value(self.grads, -max_grad, max_grad)
+            if is_batch_training:
+                self._grads = tf.gradients(loss, train_params, self.training_weight)
+                with vs.variable_scope("batch_gradient", initializer=self._init):
+                    self._acc_gradients = map(lambda param: tf.get_variable(param.name.split(":")[0],
+                                                                            param.get_shape(), param.dtype,
+                                                                            tf.constant_initializer(0.0), False),
+                                              train_params)
+                self._loss = tf.get_variable("acc_loss", (), tf.float32, tf.constant_initializer(0.0), False)
+                # We abuse the gradient descent optimizer for accumulating gradients and loss (summing)
+                acc_opt = tf.train.GradientDescentOptimizer(-1.0)
+                self._accumulate_gradients = acc_opt.apply_gradients(zip(self._grads, self._acc_gradients))
+                self._acc_loss = acc_opt.apply_gradients([(loss, self._loss)])
 
-                    self._update = self.opt.apply_gradients(
-                        zip(map(lambda v: v.value(), self._acc_gradients), train_params), global_step=self.global_step)
-                    self._reset = map(lambda param: param.initializer, self._acc_gradients)
-                    self._reset.append(self._loss.initializer)
+                self._update = self.opt.apply_gradients(
+                    zip(map(lambda v: v.value(), self._acc_gradients), train_params), global_step=self.global_step)
+                self._reset = map(lambda param: param.initializer, self._acc_gradients)
+                self._reset.append(self._loss.initializer)
+            else:
+                self._loss = loss / math_ops.cast(num_pos, dtypes.float32)
+                in_params = self._input_params()
+                if not in_params:
+                    self._grads = tf.gradients(self._loss, train_params, self.training_weight)
                 else:
-                    self._loss = loss / math_ops.cast(num_pos, dtypes.float32)
-                    in_params = self._input_params()
-                    if not in_params:
-                        self._grads = tf.gradients(self._loss, train_params, self.training_weight)
-                    else:
-                        self._grads = tf.gradients(self._loss, train_params + in_params, self.training_weight)
-                        self._input_grads = self._grads[len(train_params):]
-                    if len(train_params) > 0:
-                        self._update = self.opt.apply_gradients(zip(self._grads[:len(train_params)], train_params),
-                                                                global_step=self.global_step)
+                    self._grads = tf.gradients(self._loss, train_params + in_params, self.training_weight)
+                    self._input_grads = self._grads[len(train_params):]
+                if len(train_params) > 0:
+                    self._update = self.opt.apply_gradients(zip(self._grads[:len(train_params)], train_params),
+                                                            global_step=self.global_step)
 
             if l2_lambda > 0.0:
                 l2 = tf.reduce_sum(array_ops.pack([tf.nn.l2_loss(t) for t in train_params]))

@@ -235,6 +235,7 @@ class CompModelO(CompositionalKBScoringModel):
                 grad_list.append(observed_grad)
         self._comp_model.backward(sess, grad_list)
 
+
 class CompWeightedModelO(CompModelO):
 
     def _init_inputs(self):
