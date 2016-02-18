@@ -77,7 +77,7 @@ def create_model(kb, size, batch_size, is_train=True, num_neg=200, learning_rate
                                  learning_rate, l2_lambda, is_batch_training, composition)
 
 
-@tf.ops.RegisterGradient("SparseToDense")
+@tf.RegisterGradient("SparseToDense")
 def _tf_sparse_to_dense_grad(op, grad):
     grad_flat = tf.reshape(grad, [-1])
     sparse_indices = op.inputs[0]

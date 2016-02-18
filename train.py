@@ -10,7 +10,6 @@ import sys
 from kb import subsample_kb
 import shutil
 import json
-from tensorflow.models.rnn.rnn_cell import *
 
 
 # data loading specifics
