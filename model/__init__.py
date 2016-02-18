@@ -22,13 +22,13 @@ def create_model(kb, size, batch_size, is_train=True, num_neg=200, learning_rate
             composition = ""
         with vs.variable_scope(type+"_" + composition):
             comp_size = 2*size if type == "ModelE" else size
-            if composition == "Tanh":
+            if composition == "RNN":
                 composition = TanhRNNCompF(kb, comp_size, num_buckets, split_relations, batch_size / (num_neg + 1), learning_rate)
             elif composition == "LSTM":
                 composition = LSTMCompF(kb, comp_size, num_buckets, split_relations, batch_size / (num_neg + 1), learning_rate)
             elif composition == "GRU":
                 composition = GRUCompF(kb, comp_size, num_buckets, split_relations, batch_size / (num_neg + 1), learning_rate)
-            elif composition == "BiTanh":
+            elif composition == "BiRNN":
                 composition = BiTanhRNNCompF(kb, comp_size, num_buckets, split_relations, batch_size / (num_neg + 1), learning_rate)
             elif composition == "BiLSTM":
                 composition = BiLSTMCompF(kb, comp_size, num_buckets, split_relations, batch_size / (num_neg + 1), learning_rate)
