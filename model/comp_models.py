@@ -340,8 +340,8 @@ class CompWeightedModelO(CompModelO):
 
 class CompCombinedModel(CompositionalKBScoringModel):
 
-    def __init__(self, models, kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2, l2_lambda=0.0,
-                 is_batch_training=False, composition=None, share_vars=False):
+    def __init__(self, models, kb, size, batch_size, composition, comp_util,
+                 is_train=True, num_neg=200, learning_rate=1e-2, l2_lambda=0.0):
         self._models = []
         self.__name = '_'.join(models)
         if composition:
@@ -349,10 +349,11 @@ class CompCombinedModel(CompositionalKBScoringModel):
         with vs.variable_scope(self.name()):
             for m in models:
                 self._models.append(model.create_model(kb, size, batch_size, False, num_neg, learning_rate,
-                                                       l2_lambda, False, composition=composition, type=m))
+                                                       l2_lambda, False, composition=composition,
+                                                       comp_util=comp_util, type=m))
 
         AbstractKBScoringModel.__init__(self, kb, size, batch_size, is_train, num_neg, learning_rate,
-                                        l2_lambda, is_batch_training)
+                                        l2_lambda, False)
 
     def name(self):
         return self.__name

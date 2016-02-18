@@ -1,5 +1,6 @@
 import os
 from kb import KB
+import numpy as np
 
 def load_fb15k(dir, with_text=True, split_text=False, max_vocab=-1):
     train_file = os.path.join(dir, "train.txt")
@@ -58,12 +59,12 @@ def split_relations(rel):
             if rel[i:i+3] == ":<-":
                 if c > 0:  # do not keep [XXX]
                     dep_path_arr.append(rel[c:i])
-                dep_path_arr.append(":<-")
+                #dep_path_arr.append(":<-")
                 c = i+3
             elif rel[i:i+2] == ":<":
                 if c > 0:
                     dep_path_arr.append(rel[c:i])
-                dep_path_arr.append(":<")
+                #dep_path_arr.append(":<")
                 c = i+2
             elif rel[i:i+2] == ">:":
                 if c > 0:

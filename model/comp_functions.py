@@ -4,50 +4,95 @@ import model
 from tensorflow.models.rnn.rnn_cell import *
 
 
-class CompositionFunction:
+class CompositionUtil:
+    """Holds information on decomposing relations, word vocabulary, buckets, their sizes etc."""
 
-    def __init__(self, kb, size, num_buckets, rel2seq, batch_size, learning_rate=1e-2):
+    def __init__(self, kb, num_buckets, rel2seq, max_size):
         self._kb = kb
-        self._size = size
-        self._batch_size = batch_size
         self._rel2seq = rel2seq
-        self.learning_rate = tf.Variable(float(learning_rate), trainable=False, name="lr")
-        self.opt = tf.train.AdamOptimizer(learning_rate=self.learning_rate, beta1=0.0)
-        l_count = dict()
-        total = 0
-        max_l = 0
+
+        # Creation of vocabulary
         self._vocab = {"#PADDING#": 0}
+        self._vocab["#UNK#"] = 1
+        counts = {}
+        max_l = 0
+        l_count = {}
+        total = 0
+        must_contain = set()
         for (rel, _, _), _, typ in kb.get_all_facts():
-            s = self._rel2seq(rel)
-            l = len(s)
+            s = rel2seq(rel)
             for word in s:
-                if word not in self._vocab:
-                    self._vocab[word] = len(self._vocab)
+                if typ == "train":  # as opposed to train_text for example
+                    must_contain.add(word)
+                elif word not in counts:
+                    counts[word] = 1
+                else:
+                    counts[word] += 1
+            l = len(s)
             max_l = max(max_l, l)
             if l not in l_count:
                 l_count[l] = 0
             l_count[l] += 1
             total += 1
+
+        if max_size <= 0:
+            for k in counts:
+                self._vocab[k] = len(self._vocab)
+        else:
+            keys, values = list(), list()
+            for k, v in counts.iteritems():
+                if k not in must_contain:
+                    keys.append(k)
+                    values.append(-v)
+
+            most_frequent = np.argsort(np.array(values))
+            for w in must_contain:
+                self._vocab[w] = len(self._vocab)
+            max_size = min(max_size-len(must_contain)-1, len(most_frequent))
+            for i in xrange(max_size):
+                k = keys[most_frequent[i]]
+                self._vocab[k] = len(self._vocab)
+
+        ct = 0
+        self.buckets = []
+        for l in xrange(max_l+1):
+            c = l_count.get(l)
+            if c:
+                ct += c
+                if ct % (total / num_buckets) < c:
+                    self.buckets.append(l)
+
+        if self.buckets and self.buckets[-1] != max_l:
+            if len(self.buckets) >= num_buckets:
+                self.buckets[-1] = max_l
+            else:
+                self.buckets.append(max_l)
+
+    def rel2word_ids(self, rel):
+        return [self._vocab.get(w, 1) for w in self._rel2seq(rel)]  # use unknown word if w is not in vocab
+
+    @property
+    def vocab(self):
+        return self._vocab
+
+
+class CompositionFunction:
+
+    def __init__(self, size, batch_size, comp_util, learning_rate=1e-2):
+        self._comp_util = comp_util
+        self._size = size
+        self._batch_size = batch_size
+        self.learning_rate = tf.Variable(float(learning_rate), trainable=False, name="lr")
+        self.opt = tf.train.AdamOptimizer(learning_rate=self.learning_rate, beta1=0.0)
+        max_l = comp_util.buckets[-1]  # maximum length
         self._seq_inputs = [tf.placeholder(tf.int64, shape=[None], name="seq_input%d" % i)
                             for i in xrange(max_l)]
         with vs.variable_scope("composition", initializer=model.default_init()):
             seq_outputs = self._comp_f()
         self._bucket_outputs = []
-        ct = 0
-        self._buckets = []
-        for l in xrange(max_l):
-            c = l_count.get(l)
-            if c:
-                ct += c
-                if ct % (total / num_buckets) < c:
-                    self._bucket_outputs.append(seq_outputs[l])
-                    self._buckets.append(l)
-        if len(self._buckets) >= num_buckets:
-            self._buckets[-1] = max_l
-            self._bucket_outputs[-1] = seq_outputs[-1]
-        else:
-            self._buckets.append(max_l)
-            self._bucket_outputs.append(seq_outputs[-1])
+
+        for l in comp_util.buckets:
+            self._bucket_outputs.append(seq_outputs[l-1])
 
         self._input = [[0]*self._batch_size for _ in xrange(max_l)]  # fill input with padding
         self._feed_dict = dict()
@@ -63,9 +108,6 @@ class CompositionFunction:
 
     def name(self):
         return "BoW"
-
-    def _rel2word_ids(self, rel):
-        return [self._vocab[w] for w in self._rel2seq(rel)]
 
     def _finish_batch(self, batch_size, batch_length):
         if batch_size < self._batch_size:
@@ -88,7 +130,7 @@ class CompositionFunction:
                 self._last_rel_groups[rel].append(i)
             else:
                 self._last_rel_groups[rel] = [i]
-                self._last_rels.append((rel, self._rel2word_ids(rel)))
+                self._last_rels.append((rel, self._comp_util.rel2word_ids(rel)))
         self._last_sorted = np.argsort(np.array(map(lambda x: len(x[1]), self._last_rels)))
 
         compositions = [None] * len(rels)
@@ -97,7 +139,7 @@ class CompositionFunction:
             batch_size = min(self._batch_size, len(self._last_rels)-i)
             batch_length = len(self._last_rels[self._last_sorted[i+batch_size-1]][1])
             bucket_id = 0
-            for idx, bucket_length in enumerate(self._buckets):
+            for idx, bucket_length in enumerate(self._comp_util.buckets):
                 if bucket_length >= batch_length:
                     batch_length = bucket_length
                     bucket_id = idx
@@ -129,7 +171,7 @@ class CompositionFunction:
             batch_size = min(len(self._last_rels)-i, self._batch_size)
             batch_length = len(self._last_rels[self._last_sorted[i+batch_size-1]][1])
             bucket_id = 0
-            for idx, bucket_length in enumerate(self._buckets):
+            for idx, bucket_length in enumerate(self._comp_util.buckets):
                 if bucket_length >= batch_length:
                     batch_length = bucket_length
                     bucket_id = idx
@@ -158,7 +200,7 @@ class BoWCompF(CompositionFunction):
     def _comp_f(self):
         with tf.device("/cpu:0"):
             # word embedding matrix
-            self.__E_ws = tf.get_variable("E_ws", [len(self._vocab), self._size])
+            self.__E_ws = tf.get_variable("E_ws", [len(self._comp_util.vocab), self._size])
             self.embeddings = map(lambda inp: tf.nn.embedding_lookup(self.__E_ws, inp), self._seq_inputs)
         out = [self.embeddings[0]]
         for i in xrange(1, len(self.embeddings)):
@@ -168,17 +210,17 @@ class BoWCompF(CompositionFunction):
 
 class RNNCompF(CompositionFunction):
 
-    def __init__(self, cell, kb, size, num_buckets, rel2seq, batch_size, learning_rate=1e-2):
+    def __init__(self, cell, size, batch_size, comp_util, learning_rate=1e-2):
         assert cell.output_size == size, "cell size must equal size for RNNs"
         self._cell = cell
-        CompositionFunction.__init__(self, kb, size, num_buckets, rel2seq, batch_size, learning_rate)
+        CompositionFunction.__init__(self, size, batch_size, comp_util, learning_rate)
 
     def _comp_f(self):
         self._init_state = tf.get_variable("init_state", [self._cell.state_size])
         shape = tf.shape(self._seq_inputs[0])  # current_batch_size x 1
         init = tf.tile(self._init_state, shape)
         init = tf.reshape(init, [-1, self._cell.state_size])
-        out = embedding_rnn_decoder(self._seq_inputs, init, self._cell, len(self._vocab))[0]
+        out = embedding_rnn_decoder(self._seq_inputs, init, self._cell, len(self._comp_util.vocab))[0]
         return out
 
     def name(self):
@@ -186,34 +228,34 @@ class RNNCompF(CompositionFunction):
 
 
 class LSTMCompF(RNNCompF):
-    def __init__(self, kb, size, num_buckets, rel2seq, batch_size, learning_rate=1e-2):
-        RNNCompF.__init__(self, BasicLSTMCell(size), kb, size, num_buckets, rel2seq, batch_size, learning_rate)
+    def __init__(self, size, batch_size, comp_util, learning_rate=1e-2):
+        RNNCompF.__init__(self, BasicLSTMCell(size), size, batch_size, comp_util, learning_rate)
 
     def name(self):
         return "LSTM"
 
 
 class TanhRNNCompF(RNNCompF):
-    def __init__(self, kb, size, num_buckets, rel2seq, batch_size, learning_rate=1e-2):
-        RNNCompF.__init__(self, BasicRNNCell(size), kb, size, num_buckets, rel2seq, batch_size, learning_rate)
+    def __init__(self, size, batch_size, comp_util, learning_rate=1e-2):
+        RNNCompF.__init__(self, BasicRNNCell(size), size, batch_size, comp_util, learning_rate)
 
     def name(self):
         return "RNN"
 
 
 class GRUCompF(RNNCompF):
-    def __init__(self, kb, size, num_buckets, rel2seq, batch_size, learning_rate=1e-2):
-        RNNCompF.__init__(self, GRUCell(size), kb, size, num_buckets, rel2seq, batch_size, learning_rate)
+    def __init__(self, size, batch_size, comp_util, learning_rate=1e-2):
+        RNNCompF.__init__(self, GRUCell(size), size, batch_size, comp_util, learning_rate)
 
     def name(self):
         return "GRU"
 
 
 class BiRNNCompF(CompositionFunction):
-    def __init__(self, cell, kb, size, num_buckets, rel2seq, batch_size, learning_rate=1e-2):
+    def __init__(self, cell, size, batch_size, comp_util, learning_rate=1e-2):
         assert cell.output_size == size/2, "cell size must be size / 2 for BiRNNs"
         self._cell = cell
-        CompositionFunction.__init__(self, kb, size, num_buckets, rel2seq, batch_size, learning_rate)
+        CompositionFunction.__init__(self, size, batch_size, comp_util, learning_rate)
         self._rev_input = [[0]*self._batch_size for _ in xrange(len(self._input))]
 
     def _finish_batch(self, batch_size, batch_length):
@@ -242,9 +284,9 @@ class BiRNNCompF(CompositionFunction):
         init_fw, init_bw = tf.split(1, 2, init)
 
         with vs.variable_scope("forward_rnn"):
-            out_fw = embedding_rnn_decoder(self._seq_inputs, init_fw, self._cell, len(self._vocab))[0]
+            out_fw = embedding_rnn_decoder(self._seq_inputs, init_fw, self._cell, len(self._comp_util.vocab))[0]
         with vs.variable_scope("backward_rnn"):
-            out_bw = embedding_rnn_decoder(self._rev_seq_inputs, init_bw, self._cell, len(self._vocab))[0]
+            out_bw = embedding_rnn_decoder(self._rev_seq_inputs, init_bw, self._cell, len(self._comp_util.vocab))[0]
         out = map(lambda (o_f, o_b): tf.concat(1, [o_f, o_b]), zip(out_fw, out_bw))
         return out
 
@@ -253,24 +295,24 @@ class BiRNNCompF(CompositionFunction):
 
 
 class BiLSTMCompF(BiRNNCompF):
-    def __init__(self, kb, size, num_buckets, rel2seq, batch_size, learning_rate=1e-2):
-        BiRNNCompF.__init__(self, BasicLSTMCell(size / 2), kb, size, num_buckets, rel2seq, batch_size, learning_rate)
+    def __init__(self, size, batch_size, comp_util, learning_rate=1e-2):
+        BiRNNCompF.__init__(self, BasicLSTMCell(size / 2), size, batch_size, comp_util, learning_rate)
 
     def name(self):
         return "BiLSTM"
 
 
 class BiTanhRNNCompF(BiRNNCompF):
-    def __init__(self, kb, size, num_buckets, rel2seq, batch_size, learning_rate=1e-2):
-        BiRNNCompF.__init__(self, BasicRNNCell(size / 2), kb, size, num_buckets, rel2seq, batch_size, learning_rate)
+    def __init__(self, size, batch_size, comp_util, learning_rate=1e-2):
+        BiRNNCompF.__init__(self, BasicRNNCell(size / 2), size, batch_size, comp_util, learning_rate)
 
     def name(self):
         return "BiRNN"
 
 
 class BiGRUCompF(BiRNNCompF):
-    def __init__(self, kb, size, num_buckets, rel2seq, batch_size, learning_rate=1e-2):
-        BiRNNCompF.__init__(self, GRUCell(size / 2), kb, size, num_buckets, rel2seq, batch_size, learning_rate)
+    def __init__(self, size, batch_size, comp_util, learning_rate=1e-2):
+        BiRNNCompF.__init__(self, GRUCell(size / 2), size, batch_size, comp_util, learning_rate)
 
     def name(self):
         return "BiGRU"

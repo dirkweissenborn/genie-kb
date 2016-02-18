@@ -14,6 +14,7 @@ import json
 
 # data loading specifics
 tf.app.flags.DEFINE_string('fb15k_dir', None, 'data dir containing extracted files of fb15k dataset.')
+tf.app.flags.DEFINE_string('max_vocab', 10000, 'max vocabulary when composition is used.')
 
 # model
 tf.app.flags.DEFINE_integer("size", 10, "hidden size of model")
@@ -101,7 +102,8 @@ with tf.Session() as sess:
     print "Creating model ..."
     model = create_model(kb, FLAGS.size, batch_size, num_neg=FLAGS.num_neg, learning_rate=FLAGS.learning_rate,
                          l2_lambda=FLAGS.l2_lambda, is_batch_training=FLAGS.batch_train, type=FLAGS.model,
-                         observed_sets=FLAGS.observed_sets, composition=FLAGS.composition)
+                         observed_sets=FLAGS.observed_sets, composition=FLAGS.composition,
+                         max_vocab_size=FLAGS.max_vocab)
 
     print "Created model: " + model.name()
 

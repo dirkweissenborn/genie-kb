@@ -10,32 +10,35 @@ def default_init():
 
 def create_model(kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2,
                  l2_lambda=0.0, is_batch_training=False, type="DistMult",
-                 observed_sets=["train_text"], composition=None, num_buckets= 10):
+                 observed_sets=["train_text"], composition=None, num_buckets= 10,
+                 comp_util=None, max_vocab_size=10000):
     '''
     Factory Method for all models
     :param type: any or combination of "ModelF", "DistMult", "ModelE", "ModelO", "ModelN"
     :param composition: "Tanh", "LSTM", "GRU", "BiTanh", "BiLSTM", "BiGRU", "BoW" or None
     :return: Model(s) of type "type"
     '''
+    if composition and not comp_util:
+        comp_util = CompositionUtil(kb, num_buckets, split_relations, max_vocab_size)
     if not isinstance(type, list):
         if not composition:
             composition = ""
         with vs.variable_scope(type+"_" + composition):
             comp_size = 2*size if type == "ModelE" else size
             if composition == "RNN":
-                composition = TanhRNNCompF(kb, comp_size, num_buckets, split_relations, batch_size / (num_neg + 1), learning_rate)
+                composition = TanhRNNCompF(comp_size, batch_size / (num_neg + 1), comp_util, learning_rate)
             elif composition == "LSTM":
-                composition = LSTMCompF(kb, comp_size, num_buckets, split_relations, batch_size / (num_neg + 1), learning_rate)
+                composition = LSTMCompF(comp_size, batch_size / (num_neg + 1), comp_util, learning_rate)
             elif composition == "GRU":
-                composition = GRUCompF(kb, comp_size, num_buckets, split_relations, batch_size / (num_neg + 1), learning_rate)
+                composition = GRUCompF(comp_size, batch_size / (num_neg + 1), comp_util, learning_rate)
             elif composition == "BiRNN":
-                composition = BiTanhRNNCompF(kb, comp_size, num_buckets, split_relations, batch_size / (num_neg + 1), learning_rate)
+                composition = BiTanhRNNCompF(comp_size, batch_size / (num_neg + 1), comp_util, learning_rate)
             elif composition == "BiLSTM":
-                composition = BiLSTMCompF(kb, comp_size, num_buckets, split_relations, batch_size / (num_neg + 1), learning_rate)
+                composition = BiLSTMCompF(comp_size, batch_size / (num_neg + 1), comp_util, learning_rate)
             elif composition == "BiGRU":
-                composition = BiGRUCompF(kb, comp_size, num_buckets, split_relations, batch_size / (num_neg + 1), learning_rate)
+                composition = BiGRUCompF(comp_size, batch_size / (num_neg + 1), comp_util, learning_rate)
             elif composition == "BoW":
-                composition = BoWCompF(kb, comp_size, num_buckets, split_relations, batch_size / (num_neg + 1), learning_rate)
+                composition = BoWCompF(comp_size, batch_size / (num_neg + 1), comp_util, learning_rate)
             else:
                 composition = None
 
@@ -70,8 +73,8 @@ def create_model(kb, size, batch_size, is_train=True, num_neg=200, learning_rate
                             "Possible values are 'ModelF', 'DistMult', 'ModelE', 'ModelO', 'ModelN'." % type)
     else:
         if composition:
-            return CompCombinedModel(type, kb, size, batch_size, is_train, num_neg,
-                                     learning_rate, l2_lambda, is_batch_training, composition)
+            return CompCombinedModel(type, kb, size, batch_size, composition, comp_util, is_train, num_neg,
+                                     learning_rate, l2_lambda)
         else:
             return CombinedModel(type, kb, size, batch_size, is_train, num_neg,
                                  learning_rate, l2_lambda, is_batch_training, composition)
