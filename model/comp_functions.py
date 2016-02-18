@@ -153,6 +153,7 @@ class CompositionFunction:
             sess.run(self._bucket_update[bucket_id], feed_dict=self._feed_dict)
             i += batch_size
 
+
 class BoWCompF(CompositionFunction):
     def _comp_f(self):
         with tf.device("/cpu:0"):
@@ -163,6 +164,7 @@ class BoWCompF(CompositionFunction):
         for i in xrange(1, len(self.embeddings)):
             out.append(tf.add(out[i-1], self.embeddings[i]))
         return map(tf.tanh, out)
+
 
 class RNNCompF(CompositionFunction):
 

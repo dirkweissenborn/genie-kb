@@ -8,6 +8,7 @@ from tensorflow.python.ops.seq2seq import *
 import tf_util
 import rprop
 import model
+from tensorflow.python.ops import variable_scope as vs
 
 
 class AbstractKBScoringModel:
