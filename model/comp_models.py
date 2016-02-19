@@ -325,7 +325,7 @@ class CompWeightedModelO(CompModelO):
             end = self.__offsets[b+1] if len(self.__offsets) > (b+1) else len(self._rels)
             if end > off:
                 _off = off - b + skip
-                _end = end - b + skip
+                _end = end - b + skip - 1
                 rel_grad = grads[0][_off]
                 for i in xrange(_off+1, _end):
                     rel_grad += grads[0][i]
@@ -335,6 +335,8 @@ class CompWeightedModelO(CompModelO):
                 grad_list.extend(observed_grads)
             else:
                 skip += 2
+        assert len(grad_list) == len(self._rels), \
+            "gradients provided for composition function must have same length as input relations."
         self._comp_model.backward(sess, grad_list)
 
 
