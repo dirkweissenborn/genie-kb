@@ -281,10 +281,10 @@ class CompWeightedModelO(CompModelO):
         rels = self._tuple_rels_lookup.get((s_i, o_i))
         if rels and any(rel_i != rel for rel_i in rels):
             self._rels.append(rel)
-            for i in xrange(len(rels)):
-                if rels[i] != rel:
+            for i, rel_i in enumerate(rels):
+                if rel_i != rel:
                     self._sparse_indices.append([b, i])
-                    self._rels.append(rels[i])
+                    self._rels.append(rel_i)
             self._max_cols = max(self._max_cols, len(rels))
         else:
             self._sparse_indices.append([b, 0])
@@ -324,17 +324,17 @@ class CompWeightedModelO(CompModelO):
         for b, off in enumerate(self.__offsets):
             end = self.__offsets[b+1] if len(self.__offsets) > (b+1) else len(self._rels)
             if end > off:
-                off = off - b + skip
-                end = end - b + skip
-                rel_grad = grads[0][off]
-                for i in xrange(off+1, end):
+                _off = off - b + skip
+                _end = end - b + skip
+                rel_grad = grads[0][_off]
+                for i in xrange(_off+1, _end):
                     rel_grad += grads[0][i]
                 grad_list.append(rel_grad)
 
-                observed_grads = grads[1][off:end]
+                observed_grads = grads[1][_off:_end]
                 grad_list.extend(observed_grads)
             else:
-                skip += 1
+                skip += 2
         self._comp_model.backward(sess, grad_list)
 
 

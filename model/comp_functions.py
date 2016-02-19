@@ -107,7 +107,7 @@ class CompositionFunction:
         pass
 
     def name(self):
-        return "BoW"
+        return "Composition"
 
     def _finish_batch(self, batch_size, batch_length):
         if batch_size < self._batch_size:
@@ -206,6 +206,9 @@ class BoWCompF(CompositionFunction):
         for i in xrange(1, len(self.embeddings)):
             out.append(tf.add(out[i-1], self.embeddings[i]))
         return map(tf.tanh, out)
+
+    def name(self):
+        return "BoW"
 
 
 class RNNCompF(CompositionFunction):

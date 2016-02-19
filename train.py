@@ -14,7 +14,7 @@ import json
 
 # data loading specifics
 tf.app.flags.DEFINE_string('fb15k_dir', None, 'data dir containing extracted files of fb15k dataset.')
-tf.app.flags.DEFINE_string('max_vocab', 10000, 'max vocabulary when composition is used.')
+tf.app.flags.DEFINE_integer('max_vocab', 10000, 'max vocabulary when composition is used.')
 
 # model
 tf.app.flags.DEFINE_integer("size", 10, "hidden size of model")
