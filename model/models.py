@@ -21,9 +21,11 @@ class AbstractKBScoringModel:
         self._is_batch_training = is_batch_training
         self._is_train = is_train
         self._init = model.default_init()
+
+        self.learning_rate = tf.Variable(float(learning_rate), trainable=False, name="lr")
+        self.global_step = tf.Variable(0, trainable=False, name="step")
+
         with vs.variable_scope(self.name(), initializer=self._init):
-            self.learning_rate = tf.Variable(float(learning_rate), trainable=False, name="lr")
-            self.global_step = tf.Variable(0, trainable=False, name="step")
             with tf.device("/cpu:0"):
                 if is_batch_training:
                     self.opt = rprop.RPropOptimizer()  # tf.train.GradientDescentOptimizer(self.learning_rate)
@@ -348,8 +350,8 @@ class WeightedModelO(ModelO):
 
     def _scoring_f(self):
         with tf.device("/cpu:0"):
-           E_rels = tf.get_variable("E_r", [len(self._kb.get_symbols(0)), self._size])
-           E_tup_rels = tf.get_variable("E_tup_r", [2 * self._num_relations + 1, self._size])  # rels + inv rels + default rel
+            E_rels = tf.get_variable("E_r", [len(self._kb.get_symbols(0)), self._size])
+            E_tup_rels = tf.get_variable("E_tup_r", [2 * self._num_relations + 1, self._size])  # rels + inv rels + default rel
 
         # duplicate rels to fit with observations
         e_rel = tf.gather(tf.tanh(tf.nn.embedding_lookup(E_rels, self._rel_input)), self._gather_rels_input)
