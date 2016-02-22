@@ -86,6 +86,8 @@ class AbstractKBScoringModel:
                 if len(train_params) > 0:
                     self._update = self.opt.apply_gradients(zip(self._grads[:len(train_params)], train_params),
                                                             global_step=self.global_step)
+                else:
+                    self._update = tf.assign_add(self.global_step, 1)
 
             if l2_lambda > 0.0:
                 l2 = tf.reduce_sum(array_ops.pack([tf.nn.l2_loss(t) for t in train_params]))
