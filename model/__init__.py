@@ -39,6 +39,8 @@ def create_model(kb, size, batch_size, is_train=True, num_neg=200, learning_rate
                 composition = BiGRUCompF(comp_size, batch_size / (num_neg + 1), comp_util, learning_rate)
             elif composition == "BoW":
                 composition = BoWCompF(comp_size, batch_size / (num_neg + 1), comp_util, learning_rate)
+            elif composition == "Conv":
+                composition = ConvCompF(1, comp_size, batch_size / (num_neg + 1), comp_util, learning_rate)
             else:
                 composition = None
 

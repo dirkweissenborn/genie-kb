@@ -280,7 +280,7 @@ class BiRNNCompF(CompositionFunction):
         self._rev_seq_inputs = [tf.placeholder(tf.int64, shape=[None], name="seq_input%d" % i)
                                 for i in xrange(len(self._seq_inputs))]
         self._init_state = tf.get_variable("init_state", [self._cell.state_size * 2])
-        shape = tf.shape(self._seq_inputs[0])  # current_batch_size x 1
+        shape = tf.shape(self._seq_inputs[0])  # current_batch_size
         init = tf.tile(self._init_state, shape)
         init = tf.reshape(init, [-1, self._cell.state_size * 2])
 
@@ -319,3 +319,66 @@ class BiGRUCompF(BiRNNCompF):
 
     def name(self):
         return "BiGRU"
+
+
+class ConvCompF(CompositionFunction):
+    def __init__(self, width, size, batch_size, comp_util, learning_rate=1e-2):
+        self._width = width
+        CompositionFunction.__init__(self, size, batch_size, comp_util, learning_rate)
+
+    def _comp_f(self):
+        conv_kernels = {j:tf.get_variable("W_%d" % j,[self._size, self._size]) for j in xrange(-self._width, self._width+1)}
+        shape = tf.shape(self._seq_inputs[0])  # current_batch_size x 1
+        subj = tf.get_variable("subject", [1, self._size])
+        obj = tf.get_variable("object", [1, self._size])
+        with tf.device("/cpu:0"):
+            # word embedding matrix
+            self.__E_ws = tf.get_variable("E_ws", [len(self._comp_util.vocab), self._size])
+            embeddings = map(lambda inp: tf.nn.embedding_lookup(self.__E_ws, inp), self._seq_inputs)
+
+        subj_h = tf.reshape(tf.matmul(subj, conv_kernels[-self._width]), [-1])
+        obj_h = tf.reshape(tf.matmul(obj, conv_kernels[self._width]), [-1])
+        subj_h = tf.reshape(tf.tile(subj_h, shape), [-1, self._size])
+        obj_h = tf.reshape(tf.tile(obj_h, shape), [-1, self._size])
+        bias = tf.reshape(tf.tile(tf.get_variable("bias", [self._size]), shape), [-1, self._size])
+        convs = []
+        out = []
+        for i in xrange(len(embeddings)):
+            sum = bias
+            if i < 2*self._width - 2:
+                # for these sequence lengths (i) there is no full convolution
+                last_center = max(i + 1 - self._width, 0)
+                sum = sum + subj_h
+                for j in xrange(max(0, last_center-self._width), min(last_center + self._width, len(embeddings))):
+                    w = conv_kernels[j-last_center]
+                    sum = sum + tf.matmul(embeddings[j], w)
+                # no pooling because there is only one convolution for sequences of length i
+                out.append(tf.tanh(sum + obj_h))
+            else:
+                # for sequence length of this i, we have at least two full convolution
+                last_center = i + 1 - self._width
+                for j in xrange(-self._width, self._width):
+                    position = last_center + j
+                    if position == -1:
+                        sum = sum + subj_h
+                    else:
+                        w = conv_kernels[j]
+                        sum = sum + tf.matmul(embeddings[position], w)
+
+                if len(convs) > 0:
+                    # add obj to last convolution and pack with previous convolution
+                    h = tf.pack(convs + [tf.tanh(sum + obj_h)])
+                    # max pooling of all convolutions
+                    out.append(tf.reduce_max(h, [0]))
+                else:
+                    # no previous convs so output is this conv
+                    out.append(tf.tanh(sum + obj_h))
+
+                if i+1 < len(embeddings):
+                    #add next conv to convs
+                    convs.append(tf.tanh(sum + tf.matmul(embeddings[i+1], conv_kernels[self._width])))
+
+        return out
+
+    def name(self):
+        return "Conv_%d" % self._width
