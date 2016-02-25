@@ -124,7 +124,7 @@ class BatchNegTypeSampler:
             for _ in xrange(self.neg_per_pos):
                 x = None
                 while not x or x == disallowed or self.kb.contains_fact(True, "train", rel, subj, x):
-                    i = random.randint(0, last)
+                    i = rng.randint(0, last)
                     x = neg_candidates[i]
                     if neg_candidates is not self._objs:  # do not change self._objs, accidental doubles are very rare
                         # remove candidate efficiently from candidates
