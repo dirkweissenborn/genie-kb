@@ -1,6 +1,5 @@
 import random
 from multiprocessing.dummy import Pool
-import multiprocessing
 
 
 class BatchNegTypeSampler:
@@ -15,6 +14,8 @@ class BatchNegTypeSampler:
         self.epoch_size = self.num_facts / self.pos_per_batch
         self.reset()
         self.__pool = Pool()
+
+        self._rngs = [random.Random(random.randint(0, 1000)) for _ in xrange(2*pos_per_batch)]
 
         self._objs = list(self.kb.get_symbols(2))
         self._subjs = list(self.kb.get_symbols(1))
@@ -167,18 +168,18 @@ class BatchNegTypeSampler:
 
         if position == "both":
             negs = self.__pool.map(
-                lambda (i, seed): self.__get_neg_examples(pos[i], "obj", random.Random(seed))
+                lambda i: self.__get_neg_examples(pos[i], "obj", self._rngs[i])
                 if i < self.pos_per_batch else
-                self.__get_neg_examples(pos[i], "subj", random.Random(seed)),
-                ((i, random.randint(0, 1000)) for i in xrange(self.pos_per_batch*2)))
+                self.__get_neg_examples(pos[i], "subj", self._rngs[i]),
+                (i for i in xrange(self.pos_per_batch*2)))
 
         if position == "subj":
-            negs = self.__pool.map(lambda (fact, seed): self.__get_neg_examples(fact, "subj", random.Random(seed)),
-                                   ((fact, random.randint(0, 1000)) for fact in pos))
+            negs = self.__pool.map(lambda i: self.__get_neg_examples(pos[i], "subj", self._rngs[i]),
+                                   (i for i in xrange(self.pos_per_batch)))
 
         if position == "obj":
-            negs = self.__pool.map(lambda (fact, seed): self.__get_neg_examples(fact, "obj", random.Random(seed)),
-                                   ((fact, random.randint(0, 1000)) for fact in pos))
+            negs = self.__pool.map(lambda i: self.__get_neg_examples(pos[i], "obj", self._rngs[i]),
+                                   (i for i in xrange(self.pos_per_batch)))
 
         return pos, negs
 
