@@ -28,9 +28,19 @@ def rank_triple(sess, kb, model, triple, position="obj"):
                                                           not kb.contains_fact(True, "valid", rel, e, obj),
                                                           compatible))
 
-    scores = model.score_triples(sess, [triple] + neg_triples)
-    ix = np.argsort(scores)[::-1]
-    rank = np.where(ix == 0)[0][0] + 1
+    if isinstance(model, list):
+        scores = [m[0].score_triples(sess, [triple] + neg_triples) for m in model]
+        score = scores[0]
+        score *= model[0][1]
+        for i, s in enumerate(scores):
+            if i > 0:
+                score += (s * model[i][1])
+        ix = np.argsort(score)[::-1]
+        rank = np.where(ix == 0)[0][0] + 1
+    else:
+        scores = model.score_triples(sess, [triple] + neg_triples)
+        ix = np.argsort(scores)[::-1]
+        rank = np.where(ix == 0)[0][0] + 1
 
     return rank
 

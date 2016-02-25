@@ -7,6 +7,18 @@ def batch_dot(t1, t2):
     return tf.squeeze(tf.batch_matmul(t1_e, t2_e), [1, 2])
 
 
-def _clip_by_value(gradients, min_value, max_value):
-    # clipping would break IndexedSlices and therefore sparse updates, because they get converted to tensors
-    return [tf.clip_by_value(g, min_value, max_value) if isinstance(g, ops.IndexedSlices) else g for g in gradients]
+# compute all participating tensors in forward pass
+def get_tensors(output_tensors, input_tensors, include_out=True, current_path=None):
+    res = set()
+    for o in output_tensors:
+        if o not in input_tensors:  # we do not want to add inputs
+            current_new = set()
+            if include_out:
+                current_new.add(o)  # we do not add o directly to res
+            if current_path:
+                current_new = current_new.union(current_path)
+            res = res.union(get_tensors(o.op.inputs, input_tensors, True, current_new))
+        else:
+            # only keep paths leading to inputs
+            res = res.union(current_path)
+    return res

@@ -43,7 +43,7 @@ tf.app.flags.DEFINE_string("observed_sets", "train_text", "Which sets to observe
 tf.app.flags.DEFINE_string("valid_mode", "a", "[a,t,nt] are possible. a- validate on all triples, "
                                               "t- validate only on triples with text mentions, "
                                               "nt- validate only on triples without text mentions")
-tf.app.flags.DEFINE_string("composition", None, "'LSTM', 'GRU', 'RNN', 'BoW', 'BiLSTM', 'BiGRU', 'BiRNN'")
+tf.app.flags.DEFINE_string("composition", None, "'LSTM', 'GRU', 'RNN', 'BoW', 'BiLSTM', 'BiGRU', 'BiRNN', 'Conv'")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -60,6 +60,7 @@ if FLAGS.batch_train:
 random.seed(FLAGS.random_seed)
 tf.set_random_seed(FLAGS.random_seed)
 
+print "Loading KB ..."
 kb = load_fb15k(FLAGS.fb15k_dir, with_text=not FLAGS.kb_only)
 if FLAGS.subsample_kb > 0:
     kb = subsample_kb(kb, FLAGS.subsample_kb)
@@ -77,7 +78,7 @@ for f in kb.get_all_facts():
     elif f[2] == "train_text":
         num_text += 1
 
-print("Loaded data. %d kb triples. %d text_triples." % (num_kb, num_text))
+print("Loaded KB. %d kb triples. %d text_triples." % (num_kb, num_text))
 batch_size = (FLAGS.num_neg+1) * FLAGS.pos_per_batch * 2  # x2 because subject and object loss training
 
 fact_sampler = BatchNegTypeSampler(kb, FLAGS.pos_per_batch, which_set="train", neg_per_pos=FLAGS.num_neg, type_constraint=FLAGS.type_constraint)
@@ -101,7 +102,7 @@ if FLAGS.ckpt_its <= 0:
 with tf.Session() as sess:
     print "Creating model ..."
     model = create_model(kb, FLAGS.size, batch_size, num_neg=FLAGS.num_neg, learning_rate=FLAGS.learning_rate,
-                         l2_lambda=FLAGS.l2_lambda, is_batch_training=FLAGS.batch_train, type=FLAGS.model,
+                         l2_lambda=FLAGS.l2_lambda, is_batch_training=FLAGS.batch_train, model=FLAGS.model,
                          observed_sets=FLAGS.observed_sets, composition=FLAGS.composition,
                          max_vocab_size=FLAGS.max_vocab)
 
@@ -221,5 +222,12 @@ with tf.Session() as sess:
         f.write("MRR wt: %.3f\nHits10 wt: %.3f\n\n" % (mrr_wt, top10_wt))
         f.write("MRR nt: %.3f\nHits10 nt: %.3f\n\nFLAGS:\n" % (mrr_nt, top10_nt))
         f.write(json.dumps(FLAGS.__flags, sort_keys=True, indent=2, separators=(',', ': ')))
+        f.flush()
+    with open(os.path.join(FLAGS.save_dir, "model.cfg"), 'w') as f:
+        f.write("size=%d\n" % FLAGS.size)
+        f.write("path=%s\n" % os.path.join(FLAGS.save_dir,model_name))
+        if FLAGS.composition:
+            f.write("composition=%s\n" % FLAGS.composition)
+        f.write("model=%s" % FLAGS.model)
         f.flush()
     print "##############################"

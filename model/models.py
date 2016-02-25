@@ -99,7 +99,7 @@ class AbstractKBScoringModel:
                 else:
                     self._l2_update = tf.train.GradientDescentOptimizer(self.learning_rate).minimize(l2_loss, var_list=train_params)
 
-        self.saver = tf.train.Saver(tf.all_variables())
+        self.saver = tf.train.Saver(filter(lambda v: self.name() in v.name, tf.all_variables()))
 
     def _input_params(self):
         return None
@@ -217,7 +217,7 @@ class DistMult(AbstractKBScoringModel):
 
         self.e_subj = tf.tanh(tf.nn.embedding_lookup(E_subjs, self._subj_input))
         self.e_obj = tf.tanh(tf.nn.embedding_lookup(E_objs, self._obj_input))
-        self.e_rel = tf.sigmoid(tf.nn.embedding_lookup(E_rels, self._rel_input))
+        self.e_rel = tf.tanh(tf.nn.embedding_lookup(E_rels, self._rel_input))
         s_o_prod = self.e_obj * self.e_subj
 
         score = tf_util.batch_dot(self.e_rel, s_o_prod)
@@ -502,7 +502,7 @@ class CombinedModel(AbstractKBScoringModel):
         with vs.variable_scope(self.name()):
             for m in models:
                 self._models.append(model.create_model(kb, size, batch_size, False, num_neg, learning_rate,
-                                                       l2_lambda, False, composition=composition, type=m))
+                                                       l2_lambda, False, composition=composition, model=m))
 
         AbstractKBScoringModel.__init__(self, kb, size, batch_size, is_train, num_neg, learning_rate,
                                         l2_lambda, is_batch_training)

@@ -3,83 +3,99 @@ from models import *
 from comp_models import *
 from comp_functions import *
 from data.load_fb15k237 import split_relations
+import ConfigParser
+
 
 def default_init():
     return tf.random_normal_initializer(0.0, 0.1)
 
 
 def create_model(kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2,
-                 l2_lambda=0.0, is_batch_training=False, type="DistMult",
+                 l2_lambda=0.0, is_batch_training=False, model="DistMult",
                  observed_sets=["train_text"], composition=None, num_buckets= 10,
                  comp_util=None, max_vocab_size=10000):
     '''
     Factory Method for all models
-    :param type: any or combination of "ModelF", "DistMult", "ModelE", "ModelO", "ModelN"
+    :param model: any or combination of "ModelF", "DistMult", "ModelE", "ModelO", "ModelN"
     :param composition: "Tanh", "LSTM", "GRU", "BiTanh", "BiLSTM", "BiGRU", "BoW" or None
     :return: Model(s) of type "type"
     '''
     if composition and not comp_util:
         comp_util = CompositionUtil(kb, num_buckets, split_relations, max_vocab_size)
-    if not isinstance(type, list):
+    if not isinstance(model, list):
+        comp_batch_size = batch_size / (num_neg + 1)
         if not composition:
             composition = ""
-        with vs.variable_scope(type+"_" + composition):
-            comp_size = 2*size if type == "ModelE" else size
+        with vs.variable_scope(model + "_" + composition):
+            comp_size = 2*size if model == "ModelE" else size
             if composition == "RNN":
-                composition = TanhRNNCompF(comp_size, batch_size / (num_neg + 1), comp_util, learning_rate)
+                composition = TanhRNNCompF(comp_size, comp_batch_size, comp_util, learning_rate)
             elif composition == "LSTM":
-                composition = LSTMCompF(comp_size, batch_size / (num_neg + 1), comp_util, learning_rate)
+                composition = LSTMCompF(comp_size, comp_batch_size, comp_util, learning_rate)
             elif composition == "GRU":
-                composition = GRUCompF(comp_size, batch_size / (num_neg + 1), comp_util, learning_rate)
+                composition = GRUCompF(comp_size, comp_batch_size, comp_util, learning_rate)
             elif composition == "BiRNN":
-                composition = BiTanhRNNCompF(comp_size, batch_size / (num_neg + 1), comp_util, learning_rate)
+                composition = BiTanhRNNCompF(comp_size, comp_batch_size, comp_util, learning_rate)
             elif composition == "BiLSTM":
-                composition = BiLSTMCompF(comp_size, batch_size / (num_neg + 1), comp_util, learning_rate)
+                composition = BiLSTMCompF(comp_size, comp_batch_size, comp_util, learning_rate)
             elif composition == "BiGRU":
-                composition = BiGRUCompF(comp_size, batch_size / (num_neg + 1), comp_util, learning_rate)
+                composition = BiGRUCompF(comp_size, comp_batch_size, comp_util, learning_rate)
             elif composition == "BoW":
-                composition = BoWCompF(comp_size, batch_size / (num_neg + 1), comp_util, learning_rate)
+                composition = BoWCompF(comp_size, comp_batch_size, comp_util, learning_rate)
             elif composition == "Conv":
-                composition = ConvCompF(1, comp_size, batch_size / (num_neg + 1), comp_util, learning_rate)
+                composition = ConvCompF(1, comp_size, comp_batch_size, comp_util, learning_rate)
             else:
                 composition = None
 
-        if type == "ModelF":
+        if model == "ModelF":
             return ModelF(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
-        elif type == "DistMult":
+        elif model == "DistMult":
             if composition:
                 return CompDistMult(kb, size, batch_size, composition, is_train, num_neg, learning_rate)
             else:
                 return DistMult(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
-        elif type == "ModelE":
+        elif model == "ModelE":
             if composition:
                 return CompModelE(kb, size, batch_size, composition, is_train, num_neg, learning_rate)
             else:
                 return ModelE(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
-        elif type == "ModelO":
+        elif model == "ModelO":
             if composition:
                 return CompModelO(kb, size, batch_size, composition, is_train, num_neg, learning_rate, observed_sets)
             else:
                 return ModelO(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training, observed_sets)
-        elif type == "WeightedModelO":
+        elif model == "WeightedModelO":
             if composition:
                 return CompWeightedModelO(kb, size, batch_size, composition, is_train, num_neg, learning_rate, observed_sets)
             else:
                 return WeightedModelO(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training, observed_sets)
-        elif type == "BlurWeightedModelO":
+        elif model == "BlurWeightedModelO":
             return BlurWeightedModelO(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training, observed_sets)
-        elif type == "ModelN":
+        elif model == "ModelN":
             return ModelN(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
         else:
             raise NameError("There is no model with type %s. "
-                            "Possible values are 'ModelF', 'DistMult', 'ModelE', 'ModelO', 'ModelN'." % type)
+                            "Possible values are 'ModelF', 'DistMult', 'ModelE', 'ModelO', 'ModelN'." % model)
     else:
         if composition:
-            return CompCombinedModel(type, kb, size, batch_size, composition, comp_util, is_train, num_neg,
+            return CompCombinedModel(model, kb, size, batch_size, composition, comp_util, is_train, num_neg,
                                      learning_rate, l2_lambda)
         else:
-            return CombinedModel(type, kb, size, batch_size, is_train, num_neg,
+            return CombinedModel(model, kb, size, batch_size, is_train, num_neg,
                                  learning_rate, l2_lambda, is_batch_training, composition)
+
+
+def load_model(sess, kb, batch_size, config_file):
+    config = {}
+    with open(config_file, 'r') as f:
+        for l in f:
+            [k, v] = l.strip().split("=")
+            config[k] = v
+    m = create_model(kb, config["size"], batch_size, is_train=False, composition=config.get("composition"),
+                     model=config["model"])
+    m.saver.restore(sess, config["path"])
+
+    return m
 
 
 @tf.RegisterGradient("SparseToDense")

@@ -138,7 +138,7 @@ class CompModelE(CompositionalKBScoringModel):
             E_subjs = tf.get_variable("E_s", [len(self._kb.get_symbols(1)), self._size])
             E_objs = tf.get_variable("E_o", [len(self._kb.get_symbols(2)), self._size])
 
-        self.e_rel_s, self.e_rel_o = tf.split(1, 2, self._rel_input)
+        self.e_rel_o, self.e_rel_s = tf.split(1, 2, self._rel_input)
 
         self.e_subj = tf.tanh(tf.nn.embedding_lookup(E_subjs, self._subj_input))
         self.e_obj = tf.tanh(tf.nn.embedding_lookup(E_objs, self._obj_input))
@@ -352,7 +352,7 @@ class CompCombinedModel(CompositionalKBScoringModel):
             for m in models:
                 self._models.append(model.create_model(kb, size, batch_size, False, num_neg, learning_rate,
                                                        l2_lambda, False, composition=composition,
-                                                       comp_util=comp_util, type=m))
+                                                       comp_util=comp_util, model=m))
 
         AbstractKBScoringModel.__init__(self, kb, size, batch_size, is_train, num_neg, learning_rate,
                                         l2_lambda, False)
