@@ -69,8 +69,6 @@ def create_model(kb, size, batch_size, is_train=True, num_neg=200, learning_rate
                 return CompWeightedModelO(kb, size, batch_size, composition, is_train, num_neg, learning_rate, observed_sets)
             else:
                 return WeightedModelO(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training, observed_sets)
-        elif model == "BlurWeightedModelO":
-            return BlurWeightedModelO(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training, observed_sets)
         elif model == "ModelN":
             return ModelN(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
         else:

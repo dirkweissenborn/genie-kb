@@ -253,13 +253,12 @@ class ModelO(AbstractKBScoringModel):
                                         l2_lambda=0.0, is_batch_training=False)
 
     def _init_inputs(self):
-        self._rel_ids = dict()
         # create tuple to rel lookup
         self._tuple_rels_lookup = dict()
+        self._num_relations = len(self._kb.get_symbols(0))
+
         for (rel, subj, obj), _, typ in self._kb.get_all_facts():
             if typ in self._which_sets:
-                #if rel not in self._rel_ids:
-                #    self._rel_ids[rel] = len(self._rel_ids)
                 s_i = self._kb.get_id(subj, 1)
                 o_i = self._kb.get_id(obj, 2)
                 r_i = self._kb.get_id(rel, 0)
@@ -268,22 +267,12 @@ class ModelO(AbstractKBScoringModel):
                     self._tuple_rels_lookup[t] = [r_i]
                 else:
                     self._tuple_rels_lookup[t].append(r_i)
-
-        num_relations = len(self._kb.get_symbols(0))
-
-        #also add inverse relations to tuples
-        for (rel, subj, obj), _, typ in self._kb.get_all_facts():
-            if typ in self._which_sets:
-                #if rel not in self._rel_ids:
-                    #self._rel_ids[rel] = len(self._rel_ids)
-                s_i = self._kb.get_id(subj, 1)
-                o_i = self._kb.get_id(obj, 2)
-                r_i = self._kb.get_id(rel, 0) + num_relations
-                t = (o_i, s_i)
-                if t not in self._tuple_rels_lookup:
-                    self._tuple_rels_lookup[t] = [r_i]
+                # also add inverse
+                t_inv = (o_i, s_i)
+                if t_inv not in self._tuple_rels_lookup:
+                    self._tuple_rels_lookup[t_inv] = [r_i + self._num_relations]
                 else:
-                    self._tuple_rels_lookup[t].append(r_i)
+                    self._tuple_rels_lookup[t_inv].append(r_i + self._num_relations)
 
         self._rel_input = tf.placeholder(tf.int64, shape=[None], name="rel")
         self._rel_in = np.zeros([self._batch_size], dtype=np.int64)
@@ -307,7 +296,7 @@ class ModelO(AbstractKBScoringModel):
         rels = self._tuple_rels_lookup.get((s_i, o_i))
         if rels:
             for i in xrange(len(rels)):
-                if rels[i] != self._rel_ids.get(rel):
+                if rels[i] != r_i:
                     self._sparse_indices.append([j, i])
                     self._sparse_values.append(rels[i])
             self._max_cols = max(self._max_cols, len(rels) + 1)
@@ -328,7 +317,7 @@ class ModelO(AbstractKBScoringModel):
 
     def _scoring_f(self):
         with tf.device("/cpu:0"):
-           E_rels = tf.get_variable("E_r", [len(self._kb.get_symbols(0)) * 2 + 1, self._size])
+           E_rels = tf.get_variable("E_r", [self._num_relations * 2 + 1, self._size])
            #E_tup_rels = tf.get_variable("E_tup_r", [2 * self._num_relations + 1, self._size])  # rels + inv rels + default rel
 
         self.e_rel = tf.tanh(tf.nn.embedding_lookup(E_rels, self._rel_input))
@@ -352,7 +341,7 @@ class WeightedModelO(ModelO):
 
     def _scoring_f(self):
         with tf.device("/cpu:0"):
-            E_rels = tf.get_variable("E_r", [len(self._kb.get_symbols(0)) * 2 + 1, self._size])
+            E_rels = tf.get_variable("E_r", [self._num_relations * 2 + 1, self._size])
             #E_tup_rels = tf.get_variable("E_tup_r", [2 * self._num_relations + 1, self._size])  # rels + inv rels + default rel
 
         # duplicate rels to fit with observations
@@ -364,29 +353,6 @@ class WeightedModelO(ModelO):
         scores = tf.sparse_to_dense(self._sparse_indices_input, self._shape_input,
                                     scores_flat, default_value=-1e-3)
         softmax = tf.nn.softmax(scores)
-        weighted_scores = tf.reduce_sum(scores * softmax, reduction_indices=[1], keep_dims=False)
-
-        return weighted_scores
-
-
-class BlurWeightedModelO(WeightedModelO):
-
-    def _scoring_f(self):
-        with tf.device("/cpu:0"):
-            E_rels = tf.get_variable("E_r", [len(self._kb.get_symbols(0)), self._size])
-            E_tup_rels = tf.get_variable("E_tup_r", [2 * self._num_relations + 1, self._size])  # rels + inv rels + default rel
-
-        blur_factor = tf.get_variable("blur", shape=[1], initializer=tf.constant_initializer(0.0))
-        blur_factor = tf.sigmoid(blur_factor)
-        # duplicate rels to fit with observations
-        e_rel = tf.gather(tf.tanh(tf.nn.embedding_lookup(E_rels, self._rel_input)), self._gather_rels_input)
-        e_tup_rels = tf.tanh(tf.nn.embedding_lookup(E_tup_rels, self._sparse_values_input))
-
-        scores_flat = tf_util.batch_dot(e_rel, e_tup_rels)
-        # for softmax set empty cells to something very small, so weight becomes practically zero
-        scores = tf.sparse_to_dense(self._sparse_indices_input, self._shape_input,
-                                    scores_flat, default_value=-1e-3)
-        softmax = tf.nn.softmax(scores * blur_factor)
         weighted_scores = tf.reduce_sum(scores * softmax, reduction_indices=[1], keep_dims=False)
 
         return weighted_scores
