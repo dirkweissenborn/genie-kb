@@ -8,6 +8,8 @@ class CompositionalKBScoringModel(AbstractKBScoringModel):
     def __init__(self, kb, size, batch_size, comp_f, is_train=True, num_neg=200, learning_rate=1e-2):
         self._comp_f = comp_f
         AbstractKBScoringModel.__init__(self, kb, size, batch_size, is_train, num_neg, learning_rate, 0.0, False)
+        self.learning_rate_decay_op = [self.learning_rate_decay_op,
+                                       comp_f.learning_rate.assign(comp_f.learning_rate * 0.5)]
 
     def _input_params(self):
         return [self._rel_input]

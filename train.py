@@ -197,11 +197,13 @@ with tf.Session() as sess:
             else:
                 raise ValueError("valid_mode flag must be either 'a','t' or 'nt'")
 
+            if e >= 1 and mrr <= previous_mrrs[-1] + 1e-3:
+                # if no significant improvement decay learningrate
+                sess.run(model.learning_rate_decay_op)
+
             if e >= 1 and len(previous_mrrs) > 2 and mrr <= min(previous_mrrs[-2:])+1e-4:
                 print "Stop learning!"
                 break
-                #lr = model.learning_rate.eval()
-                #sess.run(model.learning_rate.assign(lr * FLAGS.learning_rate_decay))
                 #print "Decaying learning rate to: %.4f" % model.learning_rate.eval()
 
             previous_mrrs.append(mrr)
