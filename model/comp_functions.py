@@ -404,4 +404,4 @@ class ConvCompF(CompositionFunction):
         return out
 
     def name(self):
-        return "Conv_%d" % self._width
+        return "Conv"

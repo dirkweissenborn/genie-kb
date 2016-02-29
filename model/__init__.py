@@ -26,7 +26,7 @@ def create_model(kb, size, batch_size, is_train=True, num_neg=200, learning_rate
         comp_batch_size = batch_size / (num_neg + 1)
         if not composition:
             composition = ""
-        with vs.variable_scope(model + "_" + composition):
+        with vs.variable_scope("Comp" + model + "__" + composition):
             comp_size = 2*size if model == "ModelE" else size
             if composition == "RNN":
                 composition = TanhRNNCompF(comp_size, comp_batch_size, comp_util, learning_rate)
@@ -83,17 +83,35 @@ def create_model(kb, size, batch_size, is_train=True, num_neg=200, learning_rate
                                  learning_rate, l2_lambda, is_batch_training, composition)
 
 
-def load_model(sess, kb, batch_size, config_file):
+def load_model(sess, kb, batch_size, config_file, comp_util=None):
     config = {}
     with open(config_file, 'r') as f:
         for l in f:
             [k, v] = l.strip().split("=")
             config[k] = v
     m = create_model(kb, config["size"], batch_size, is_train=False, composition=config.get("composition"),
-                     model=config["model"])
+                     model=config["model"], comp_util=comp_util)
     m.saver.restore(sess, config["path"])
 
     return m
+
+
+def load_models(sess, kb, batch_size, config_files, comp_util=None):
+    ms = []
+    for config_file in config_files:
+        config = {}
+        with open(config_file, 'r') as f:
+            for l in f:
+                [k, v] = l.strip().split("=")
+                config[k] = v
+        m = create_model(kb, config["size"], batch_size, is_train=False, composition=config.get("composition"),
+                         model=config["model"])
+        if m._comp_f:
+            comp_util = m._comp_f._comp_util
+        m.saver.restore(sess, config["path"])
+        ms.append(m)
+
+    return ms
 
 
 @tf.RegisterGradient("SparseToDense")

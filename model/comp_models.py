@@ -5,8 +5,8 @@ from tensorflow.models.rnn.rnn_cell import *
 
 
 class CompositionalKBScoringModel(AbstractKBScoringModel):
-    def __init__(self, kb, size, batch_size, comp_model, is_train=True, num_neg=200, learning_rate=1e-2):
-        self._comp_model = comp_model
+    def __init__(self, kb, size, batch_size, comp_f, is_train=True, num_neg=200, learning_rate=1e-2):
+        self._comp_f = comp_f
         AbstractKBScoringModel.__init__(self, kb, size, batch_size, is_train, num_neg, learning_rate, 0.0, False)
 
     def _input_params(self):
@@ -41,19 +41,19 @@ class CompositionalKBScoringModel(AbstractKBScoringModel):
             self._feed_dict[self._rel_input] = self._rel_in
 
     def name(self):
-        return self.__class__.__name__ + "__" + self._comp_model.name()
+        return self.__class__.__name__ + "__" + self._comp_f.name()
 
     def _get_feed_dict(self):
         return self._feed_dict
 
     def _composition_forward(self, sess):
-        rel_embeddings = self._comp_model.forward(sess, self._rels)
+        rel_embeddings = self._comp_f.forward(sess, self._rels)
         for b in xrange(len(rel_embeddings)):
             self._rel_in[b] = rel_embeddings[b]
 
     def _composition_backward(self, sess, grads):
         grad_list = [grads[0][b] for b in xrange(grads[0].shape[0])]
-        self._comp_model.backward(sess, grad_list)
+        self._comp_f.backward(sess, grad_list)
 
     def score_triples(self, sess, triples):
         i = 0
@@ -150,10 +150,10 @@ class CompModelE(CompositionalKBScoringModel):
 
 class CompModelO(CompositionalKBScoringModel):
 
-    def __init__(self, kb, size, batch_size, comp_model, is_train=True, num_neg=200, learning_rate=1e-2,
+    def __init__(self, kb, size, batch_size, comp_f, is_train=True, num_neg=200, learning_rate=1e-2,
                  which_sets=["train_text"]):
         self._which_sets = set(which_sets)
-        CompositionalKBScoringModel.__init__(self, kb, size, batch_size, comp_model, is_train=True, num_neg=200,
+        CompositionalKBScoringModel.__init__(self, kb, size, batch_size, comp_f, is_train=True, num_neg=200,
                                              learning_rate=1e-2)
 
     def _init_inputs(self):
@@ -213,7 +213,7 @@ class CompModelO(CompositionalKBScoringModel):
         return [self._rel_input, self._observed_input]
 
     def _composition_forward(self, sess):
-        rel_embeddings = self._comp_model.forward(sess, self._rels)
+        rel_embeddings = self._comp_f.forward(sess, self._rels)
         for b, off in enumerate(self.__offsets):
             self._rel_in[b] = rel_embeddings[off]
             end = self.__offsets[b+1] if len(self.__offsets) > (b+1) else len(self._rels)
@@ -233,7 +233,7 @@ class CompModelO(CompositionalKBScoringModel):
                 observed_grad /= (end-off-1)
             for i in xrange(off+1, end):
                 grad_list.append(observed_grad)
-        self._comp_model.backward(sess, grad_list)
+        self._comp_f.backward(sess, grad_list)
 
 
 class CompWeightedModelO(CompModelO):
@@ -306,7 +306,7 @@ class CompWeightedModelO(CompModelO):
         return weighted_scores
 
     def _composition_forward(self, sess):
-        rel_embeddings = self._comp_model.forward(sess, self._rels)
+        rel_embeddings = self._comp_f.forward(sess, self._rels)
         zero_v = np.zeros([self._size], dtype=np.float32)
         for b, off in enumerate(self.__offsets):
             end = self.__offsets[b+1] if len(self.__offsets) > (b+1) else len(self._rels)
@@ -337,7 +337,7 @@ class CompWeightedModelO(CompModelO):
                 skip += 2
         assert len(grad_list) == len(self._rels), \
             "gradients provided for composition function must have same length as input relations."
-        self._comp_model.backward(sess, grad_list)
+        self._comp_f.backward(sess, grad_list)
 
 
 class CompCombinedModel(CompositionalKBScoringModel):

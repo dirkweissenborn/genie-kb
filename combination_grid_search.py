@@ -176,7 +176,7 @@ if __name__ == "__main__":
 
     with tf.Session() as sess:
         print("Loading models...")
-        models = [load_model(sess, kb, FLAGS.batch_size, conf_file) for conf_file in FLAGS.model_configs.split(",")]
+        models = load_models(sess, kb, FLAGS.batch_size, FLAGS.model_configs.split(","))
         print("Loaded models.")
 
         print("####### Grid Search on Validation ###########")
