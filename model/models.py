@@ -53,7 +53,7 @@ class AbstractKBScoringModel:
             labels = tf.constant(labels, name="labels_constant", dtype=tf.float32)
             loss = math_ops.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(scores, labels))
 
-            train_params = filter(lambda v: self.name() in v.name, tf.trainable_variables())
+            train_params = filter(lambda v: (self.name()+"/score") in v.name, tf.trainable_variables())
 
             self.training_weight = tf.Variable(float(learning_rate), trainable=False, name="training_weight")
             self._feed_dict[self.training_weight] = np.array([1.0], dtype=np.float32)
@@ -83,6 +83,7 @@ class AbstractKBScoringModel:
                 else:
                     self._grads = tf.gradients(self._loss, train_params + in_params, self.training_weight)
                     self._input_grads = self._grads[len(train_params):]
+
                 if len(train_params) > 0:
                     self._update = self.opt.apply_gradients(zip(self._grads[:len(train_params)], train_params),
                                                             global_step=self.global_step)
