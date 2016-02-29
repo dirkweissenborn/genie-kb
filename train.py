@@ -199,9 +199,11 @@ with tf.Session() as sess:
 
             if e >= 1 and mrr <= previous_mrrs[-1] + 1e-3:
                 # if no significant improvement decay learningrate
+                print("Decaying learningrate.")
                 sess.run(model.learning_rate_decay_op)
 
-            if e >= 1 and len(previous_mrrs) > 2 and mrr <= min(previous_mrrs[-2:])+1e-4:
+            if e >= 1 and len(previous_mrrs) > 2 \
+                    and mrr <= previous_mrrs[-1]+1e-4 and previous_mrrs[-1] <= previous_mrrs[-2]+1e-4:
                 print "Stop learning!"
                 break
                 #print "Decaying learning rate to: %.4f" % model.learning_rate.eval()
