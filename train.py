@@ -126,7 +126,7 @@ with tf.Session() as sess:
     loss = 0.0
     step_time = 0.0
     previous_mrrs = list()
-    mrr2modelpath = dict()
+    best_path = None
     e = 0
     mode = "update"
     if FLAGS.batch_train:
@@ -208,17 +208,19 @@ with tf.Session() as sess:
                 break
                 #print "Decaying learning rate to: %.4f" % model.learning_rate.eval()
 
+            if not best_path or mrr > max(previous_mrrs):
+                if best_path:
+                    os.remove(best_path)
+                best_path = model.saver.save(sess, checkpoint_path, global_step=model.global_step)
             previous_mrrs.append(mrr)
-            # Save checkpoint and zero timer and loss.
-            path = model.saver.save(sess, checkpoint_path, global_step=model.global_step)
-            mrr2modelpath[mrr] = path
+
             print "####################################"
 
-    best_valid_mrr = max(previous_mrrs[-5:])
+    best_valid_mrr = max(previous_mrrs)
     print("Restore model to best on validation, with MRR: %.3f" % best_valid_mrr)
-    model.saver.restore(sess, mrr2modelpath[best_valid_mrr])
-    model_name = mrr2modelpath[best_valid_mrr].split("/")[-1]
-    shutil.copyfile(mrr2modelpath[best_valid_mrr], os.path.join(FLAGS.save_dir, model_name))
+    model.saver.restore(sess, best_path)
+    model_name = best_path.split("/")[-1]
+    shutil.copyfile(best_path, os.path.join(FLAGS.save_dir, model_name))
     print "########## Test ##############"
     (mrr, top10), (mrr_wt, top10_wt), (mrr_nt, top10_nt) = eval_triples(sess, kb, model, map(lambda x: x[0], kb.get_all_facts_of_arity(2, "test")), verbose=True)
     with open(os.path.join(FLAGS.save_dir, "result.txt"), 'w') as f:
