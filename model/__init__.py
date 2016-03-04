@@ -1,10 +1,7 @@
-import tensorflow as tf
 from models import *
-from seq_models import *
 from comp_models import *
 from comp_functions import *
 from data.load_fb15k237 import split_relations
-import ConfigParser
 
 
 def default_init():
@@ -52,8 +49,6 @@ def create_model(kb, size, batch_size, is_train=True, num_neg=200, learning_rate
             return ModelF(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
         elif model == "BiLSTMModel":
             return BiLSTMModel(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
-        elif model == "MultiOpRNNModel":
-            return MultiOpRNNModel(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
         elif model == "DistMult":
             if composition:
                 return CompDistMult(kb, size, batch_size, composition, is_train, num_neg, learning_rate)
