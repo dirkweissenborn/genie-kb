@@ -201,12 +201,9 @@ with tf.Session() as sess:
                 # if no significant improvement decay learningrate
                 print("Decaying learningrate.")
                 sess.run(model.learning_rate_decay_op)
-
-            if e >= 1 and len(previous_mrrs) > 2 \
-                    and mrr <= previous_mrrs[-1]+1e-4 and previous_mrrs[-1] <= previous_mrrs[-2]+1e-4:
-                print "Stop learning!"
-                break
-                #print "Decaying learning rate to: %.4f" % model.learning_rate.eval()
+                if len(previous_mrrs) >= 2 and previous_mrrs[-1] <= previous_mrrs[-2]+1e-3:
+                    print "Stop learning!"
+                    break
 
             if not best_path or mrr > max(previous_mrrs):
                 if best_path:

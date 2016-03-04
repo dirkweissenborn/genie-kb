@@ -1,7 +1,7 @@
 from eval import *
 from model import *
 
-combination_weights = [0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0]
+combination_weights = [0.05, 0.1, 0.2, 0.5, 1.0, 1.5, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0]
 
 
 def __create_grid(models):
@@ -131,22 +131,21 @@ def grid_eval_triples(sess, kb, models, triples, position="both", verbose=False)
                 total_nt += 1.0
         if verbose:
             if ct % 100 == 0:
-                best = np.argmax(rec_rank)
+                best = np.unravel_index(np.argmax(rec_rank), rec_rank.shape)
                 best_mrr = rec_rank[best]
                 best_top10 = top10[best]
                 sys.stdout.write("\r%.1f%%, mrr: %.3f, top10: %.3f" % (i*100.0 / total, best_mrr / ct, best_top10 / ct))
                 sys.stdout.flush()
 
-    best = np.argmax(rec_rank)
+    best = np.unravel_index(np.argmax(rec_rank), rec_rank.shape)
     best_mrr = rec_rank[best]
     best_top10 = top10[best]
     sys.stdout.write("\r%.1f%%, mrr: %.3f, top10: %.3f" % (i*100.0 / total, best_mrr / ct, best_top10 / ct))
     sys.stdout.flush()
     print ""
 
-    best_weight_ids = np.unravel_index(np.argmax(rec_rank), rec_rank.shape)
     weights = [1.0]
-    for i in best_weight_ids:
+    for i in best:
         weights.append(combination_weights[i])
 
     return weights
@@ -164,12 +163,12 @@ if __name__ == "__main__":
     tf.app.flags.DEFINE_string("model_configs", None, "Path to trained model.")
     tf.app.flags.DEFINE_integer("batch_size", 20000, "Number of examples in each batch for training.")
     tf.app.flags.DEFINE_boolean("type_constraint", False, "Use type constraint during sampling.")
-    tf.app.flags.DEFINE_boolean("with_text", False, "Use type constraint during sampling.")
+    tf.app.flags.DEFINE_boolean("without_text", False, "Also load text triples.")
 
     FLAGS = tf.app.flags.FLAGS
 
     print("Loading KB...")
-    kb = load_fb15k(FLAGS.fb15k_dir,  with_text=FLAGS.with_text)
+    kb = load_fb15k(FLAGS.fb15k_dir,  with_text=not FLAGS.without_text)
     if FLAGS.type_constraint:
         print("Loading type constraints...")
         load_fb15k_type_constraints(kb, os.path.join(FLAGS.fb15k_dir, "types"))
@@ -180,7 +179,7 @@ if __name__ == "__main__":
         print("Loaded models.")
 
         print("####### Grid Search on Validation ###########")
-        weights = grid_eval_triples(sess, kb, models, map(lambda x: x[0], kb.get_all_facts_of_arity(2, "valid")[:1000]), verbose=True)
+        weights = grid_eval_triples(sess, kb, models, map(lambda x: x[0], kb.get_all_facts_of_arity(2, "valid")), verbose=True)
         print("Best weights:")
         print(weights)
         print("")

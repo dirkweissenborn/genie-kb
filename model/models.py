@@ -9,6 +9,7 @@ import tf_util
 import rprop
 import model
 from tensorflow.python.ops import variable_scope as vs
+from tensorflow.models.rnn.rnn_cell import *
 
 
 class AbstractKBScoringModel:
@@ -251,8 +252,8 @@ class ModelO(AbstractKBScoringModel):
     def __init__(self, kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2, l2_lambda=0.0,
                  is_batch_training=False, which_sets=["train_text"]):
         self._which_sets = set(which_sets)
-        AbstractKBScoringModel.__init__(self, kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2,
-                                        l2_lambda=0.0, is_batch_training=False)
+        AbstractKBScoringModel.__init__(self, kb, size, batch_size, is_train, num_neg, learning_rate,
+                                        l2_lambda, is_batch_training)
 
     def _init_inputs(self):
         # create tuple to rel lookup
@@ -321,7 +322,6 @@ class ModelO(AbstractKBScoringModel):
         with tf.device("/cpu:0"):
            E_rels = tf.get_variable("E_r", [self._num_relations * 2 + 1, self._size])
            #E_tup_rels = tf.get_variable("E_tup_r", [2 * self._num_relations + 1, self._size])  # rels + inv rels + default rel
-
         self.e_rel = tf.tanh(tf.nn.embedding_lookup(E_rels, self._rel_input))
         # weighted sum of tuple rel embeddings
         sparse_tensor = tf.SparseTensor(self._sparse_indices_input, self._sparse_values_input, self._shape_input)
@@ -368,9 +368,7 @@ class ModelN(ModelO):
         for (rel, subj, obj), _, typ in self._kb.get_all_facts():
             s_i = self._kb.get_id(subj, 1)
             o_i = self._kb.get_id(obj, 2)
-            if rel not in self._rel_ids:
-                self._rel_ids[rel] = len(self._rel_ids)
-            r_i = self._rel_ids[rel]
+            r_i = self._kb.get_id(rel, 0)
             t = (s_i, o_i)
             rels = self._tuple_rels_lookup.get(t)
             if rels:
@@ -382,7 +380,7 @@ class ModelN(ModelO):
 
     def _add_triple_to_input(self, t, j):
         (rel, subj, obj) = t
-        r_i = self._rel_ids.get(rel, 0)
+        r_i = self._kb.get_id(rel, 0)
         s_i = self._kb.get_id(subj, 1)
         o_i = self._kb.get_id(obj, 2)
 
@@ -419,12 +417,11 @@ class ModelF(AbstractKBScoringModel):
         # create tuple to rel lookup
         self.__tuple_lookup = dict()
         for (rel, subj, obj), _, typ in self._kb.get_all_facts():
-            if typ.startswith("train"):
-                s_i = self._kb.get_id(subj, 1)
-                o_i = self._kb.get_id(obj, 2)
-                t = (s_i, o_i)
-                if t not in self.__tuple_lookup:
-                    self.__tuple_lookup[t] = len(self.__tuple_lookup)
+            s_i = self._kb.get_id(subj, 1)
+            o_i = self._kb.get_id(obj, 2)
+            t = (s_i, o_i)
+            if t not in self.__tuple_lookup:
+                self.__tuple_lookup[t] = len(self.__tuple_lookup)
 
         self._rel_input = tf.placeholder(tf.int64, shape=[None], name="rel")
         self._rel_in = np.zeros([self._batch_size], dtype=np.int64)
@@ -438,7 +435,7 @@ class ModelF(AbstractKBScoringModel):
         self._rel_in[j] = r_i
         s_i = self._kb.get_id(subj, 1)
         o_i = self._kb.get_id(obj, 2)
-        self._tuple_in[j] = self.__tuple_lookup[(s_i, o_i)]
+        self._tuple_in[j] = self.__tuple_lookup.get((s_i, o_i), len(self.__tuple_lookup))
 
     def _finish_adding_triples(self, batch_size):
         if batch_size < self._batch_size:
@@ -451,7 +448,7 @@ class ModelF(AbstractKBScoringModel):
     def _scoring_f(self):
         with tf.device("/cpu:0"):
            E_rels = tf.get_variable("E_r", [len(self._kb.get_symbols(0)), self._size])
-           E_tups = tf.get_variable("E_t", [len(self.__tuple_lookup), self._size])
+           E_tups = tf.get_variable("E_t", [len(self.__tuple_lookup)+1, self._size])
 
         self.e_rel = tf.tanh(tf.nn.embedding_lookup(E_rels, self._rel_input))
         self.e_tup = tf.tanh(tf.nn.embedding_lookup(E_tups, self._tuple_input))

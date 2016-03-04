@@ -1,5 +1,6 @@
 import tensorflow as tf
 from models import *
+from seq_models import *
 from comp_models import *
 from comp_functions import *
 from data.load_fb15k237 import split_relations
@@ -49,6 +50,10 @@ def create_model(kb, size, batch_size, is_train=True, num_neg=200, learning_rate
 
         if model == "ModelF":
             return ModelF(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
+        elif model == "BiLSTMModel":
+            return BiLSTMModel(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
+        elif model == "MultiOpRNNModel":
+            return MultiOpRNNModel(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
         elif model == "DistMult":
             if composition:
                 return CompDistMult(kb, size, batch_size, composition, is_train, num_neg, learning_rate)
@@ -89,7 +94,7 @@ def load_model(sess, kb, batch_size, config_file, comp_util=None):
         for l in f:
             [k, v] = l.strip().split("=")
             config[k] = v
-    m = create_model(kb, config["size"], batch_size, is_train=False, composition=config.get("composition"),
+    m = create_model(kb, int(config["size"]), batch_size, is_train=False, composition=config.get("composition"),
                      model=config["model"], comp_util=comp_util)
     m.saver.restore(sess, config["path"])
 
@@ -104,9 +109,9 @@ def load_models(sess, kb, batch_size, config_files, comp_util=None):
             for l in f:
                 [k, v] = l.strip().split("=")
                 config[k] = v
-        m = create_model(kb, config["size"], batch_size, is_train=False, composition=config.get("composition"),
-                         model=config["model"])
-        if m._comp_f:
+        m = create_model(kb, int(config["size"]), batch_size, is_train=False, composition=config.get("composition"),
+                         model=config["model"], comp_util=comp_util)
+        if not comp_util and hasattr(m, '_comp_f'):
             comp_util = m._comp_f._comp_util
         m.saver.restore(sess, config["path"])
         ms.append(m)
