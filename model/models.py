@@ -417,11 +417,12 @@ class ModelF(AbstractKBScoringModel):
         # create tuple to rel lookup
         self.__tuple_lookup = dict()
         for (rel, subj, obj), _, typ in self._kb.get_all_facts():
-            s_i = self._kb.get_id(subj, 1)
-            o_i = self._kb.get_id(obj, 2)
-            t = (s_i, o_i)
-            if t not in self.__tuple_lookup:
-                self.__tuple_lookup[t] = len(self.__tuple_lookup)
+            if typ.startswith("train"):
+                s_i = self._kb.get_id(subj, 1)
+                o_i = self._kb.get_id(obj, 2)
+                t = (s_i, o_i)
+                if t not in self.__tuple_lookup:
+                    self.__tuple_lookup[t] = len(self.__tuple_lookup)
 
         self._rel_input = tf.placeholder(tf.int64, shape=[None], name="rel")
         self._rel_in = np.zeros([self._batch_size], dtype=np.int64)
