@@ -92,9 +92,9 @@ train_dir = os.path.join(FLAGS.save_dir, "train")
 
 i = 0
 
-subsample_validation = [x[0] for x in kb.get_all_facts_of_arity(2, "valid")]
-if len(subsample_validation) > 5000:
-    subsample_validation = random.sample(subsample_validation, 5000)
+validation = [x[0] for x in kb.get_all_facts_of_arity(2, "valid")]
+if len(validation) > 1000:
+    validation = random.sample(validation, 1000)
 
 
 if FLAGS.ckpt_its <= 0:
@@ -191,7 +191,7 @@ with tf.Session(config=config) as sess:
 
             # Run evals on development set and print(their perplexity.)
             print("########## Validation ##############")
-            (mrr_a, _), (mrr_t, _), (mrr_nt, _) = eval_triples(sess, kb, model, subsample_validation, verbose=True)
+            (mrr_a, _), (mrr_t, _), (mrr_nt, _) = eval_triples(sess, kb, model, validation, verbose=True)
 
             if FLAGS.valid_mode == "a":
                 mrr = mrr_a
