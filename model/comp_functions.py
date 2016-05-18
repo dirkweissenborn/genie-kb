@@ -93,7 +93,7 @@ class CompositionFunction:
     def name(self):
         return "Composition"
 
-    def _finish_batch(self, batch_size, batch_length):
+    def _finish_batch(self, batch_size):
         if batch_size < self._batch_size:
             for seq_in, inp in zip(self._seq_inputs, self._input):
                 self._feed_dict[seq_in] = inp[:batch_size]
@@ -131,7 +131,7 @@ class CompositionFunction:
                 for j in range(len(rel_symbols), self._comp_util.max_length):
                     self._add_input(b, j, 0)  # padding
 
-            self._finish_batch(batch_size, self._comp_util.max_length)
+            self._finish_batch(batch_size)
             self._feed_dict[self._lengths] = lengths
             out = sess.run(self.output, feed_dict=self._feed_dict)
 
@@ -149,7 +149,6 @@ class CompositionFunction:
         i = 0
         while i < len(self._last_rels):
             batch_size = min(len(self._last_rels)-i, self._batch_size)
-
             self._grad_in *= 0.0  # zero grads
             lengths = []
             for b in range(batch_size):
@@ -162,7 +161,7 @@ class CompositionFunction:
                 for j in self._last_rel_groups[rel]:
                     self._grad_in[b] += grads[j]
 
-            self._finish_batch(batch_size, self._comp_util.max_length)
+            self._finish_batch(batch_size)
             self._feed_dict[self._lengths] = lengths
             sess.run(self._update, feed_dict=self._feed_dict)
             i += batch_size
@@ -238,11 +237,11 @@ class BiRNNCompF(CompositionFunction):
         inp = tf.reshape(tf.pack(self._seq_inputs), [self._comp_util.max_length, -1, 1])
         rev_inp = tf.reverse_sequence(inp, self._lengths, 0, 1)
         rev_inp = [tf.squeeze(x,[0,2]) for x in tf.split(0, self._comp_util.max_length, rev_inp)]
-        self._init_state = tf.get_variable("init_state", [self._cell.state_size * 2])
+        init = tf.get_variable("init_state", [self._cell.state_size * 2])
         batch_size = tf.shape(self._seq_inputs[0])
-        init = tf.tile(self._init_state, batch_size)
+        init = tf.tile(init, batch_size)
         init = tf.reshape(init, [-1, self._cell.state_size * 2])
-        cell = EmbeddingWrapper(self._cell, len(self._comp_util.vocab), self._size)
+        cell = EmbeddingWrapper(self._cell, len(self._comp_util.vocab), self._cell.input_size)
 
         init_fw, init_bw = tf.split(1, 2, init)
 

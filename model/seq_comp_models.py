@@ -18,7 +18,7 @@ class CompBiRNNModel(AbstractKBScoringModel):
         batch_size = tf.shape(self._seq_inputs[0])
         init = tf.tile(self._init_state, batch_size)
         init = tf.reshape(init, [-1, self._cell.state_size * 2])
-        cell = EmbeddingWrapper(self._cell, len(self.vocab), self._size)
+        cell = EmbeddingWrapper(self._cell, len(self.vocab), self._cell.input_size)
 
         init_fw, init_bw = tf.split(1, 2, init)
 
