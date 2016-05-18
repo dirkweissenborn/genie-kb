@@ -192,7 +192,7 @@ class KB:
         cell = tuple(cell)
 
         if tries == 0:
-            print "Warning, couldn't sample negative fact for", key, "in dim", dim
+            print("Warning, couldn't sample negative fact for", key, "in dim", dim)
             return cell, False, "train"
         elif (cell, True, "train") in self.__facts[arity]:
             return self.sample_neg(key, dim, arity, tries - 1)
@@ -283,9 +283,9 @@ class KB:
                 facts = [((head, (e1, e4)), typ1, target1) for ((rel1, (e1, e2)), typ1, target1) in facts1 for
                          ((rel2, (e3, e4)), typ2, target2) in facts2
                          if e2 == e3 and typ1 == typ2 and target1 == target2]
-                #print facts1
-                #print facts2
-                #print "trans", facts
+                #print(facts1)
+                #print(facts2)
+                #print("trans", facts)
                 for ((rel, (e1, e2)), target, typ) in facts:
                     contained = self.contains_fact(target, 'train', rel, (e1, e2))
                     if target and typ == 'train' and not contained:

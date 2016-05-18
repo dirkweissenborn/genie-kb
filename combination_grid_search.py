@@ -142,7 +142,7 @@ def grid_eval_triples(sess, kb, models, triples, position="both", verbose=False)
     best_top10 = top10[best]
     sys.stdout.write("\r%.1f%%, mrr: %.3f, top10: %.3f" % (i*100.0 / total, best_mrr / ct, best_top10 / ct))
     sys.stdout.flush()
-    print ""
+    print("")
 
     weights = [1.0]
     for i in best:

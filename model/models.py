@@ -10,6 +10,7 @@ import rprop
 import model
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.models.rnn.rnn_cell import *
+import functools
 
 
 class AbstractKBScoringModel:
@@ -39,70 +40,31 @@ class AbstractKBScoringModel:
 
         if is_train or is_batch_training:
             assert batch_size % (num_neg+1) == 0, "Batch size must be multiple of num_neg+1 during training"
-            #with vs.variable_scope("score", initializer=init):
-            #    tf.get_variable_scope().reuse_variables()
-            #    for i in xrange(num_neg):
-            #        self.triple_inputs.append((tf.placeholder(tf.int64, shape=[None], name="rel_%d" % (i+1)),
-            #                                   tf.placeholder(tf.int64, shape=[None], name="subj_%d" % (i+1)),
-            #                                   tf.placeholder(tf.int64, shape=[None], name="obj_%d" % (i+1))))
-            #        self.scores.append(
-            #            self._scoring_f(self.triple_inputs[i+1][0], self.triple_inputs[i+1][1], self.triple_inputs[i+1][2]))
 
             num_pos = int(batch_size/(num_neg+1))
             scores = tf.reshape(self._scores, [num_pos, num_neg + 1])
-            labels = np.zeros([num_pos, num_neg+1], dtype=np.float32)
-            labels[:, 0] = 1
-            labels = tf.constant(labels, name="labels_constant", dtype=tf.float32)
-            loss = math_ops.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(scores, labels))
+            labels = np.zeros([num_pos], dtype=np.int64)
+            labels = tf.constant(labels, name="labels_constant", dtype=tf.int64)
+            loss = math_ops.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(scores, labels))
 
-            train_params = filter(lambda v: (self.name()+"/score") in v.name, tf.trainable_variables())
+            train_params = [v for v in tf.trainable_variables() if (self.name()+"/score") in v.name]
+            self.training_weight = tf.Variable(1.0, trainable=False, name="training_weight")
 
-            self.training_weight = tf.Variable(float(learning_rate), trainable=False, name="training_weight")
-            self._feed_dict[self.training_weight] = np.array([1.0], dtype=np.float32)
-            #clipped_gradients = _clip_by_value(self.grads, -max_grad, max_grad)
-            if is_batch_training:
-                self._grads = tf.gradients(loss, train_params, self.training_weight)
-                with vs.variable_scope("batch_gradient", initializer=self._init):
-                    self._acc_gradients = map(lambda param: tf.get_variable(param.name.split(":")[0],
-                                                                            param.get_shape(), param.dtype,
-                                                                            tf.constant_initializer(0.0), False),
-                                              train_params)
-                self._loss = tf.get_variable("acc_loss", (), tf.float32, tf.constant_initializer(0.0), False)
-                # We abuse the gradient descent optimizer for accumulating gradients and loss (summing)
-                acc_opt = tf.train.GradientDescentOptimizer(-1.0)
-                self._accumulate_gradients = acc_opt.apply_gradients(zip(self._grads, self._acc_gradients))
-                self._acc_loss = acc_opt.apply_gradients([(loss, self._loss)])
-
-                self._update = self.opt.apply_gradients(
-                    zip(map(lambda v: v.value(), self._acc_gradients), train_params), global_step=self.global_step)
-                self._reset = map(lambda param: param.initializer, self._acc_gradients)
-                self._reset.append(self._loss.initializer)
+            self._loss = loss / math_ops.cast(num_pos, dtypes.float32)
+            in_params = self._input_params()
+            if not in_params:
+                self._grads = tf.gradients(self._loss, train_params, self.training_weight)
             else:
-                self._loss = loss / math_ops.cast(num_pos, dtypes.float32)
-                in_params = self._input_params()
-                if not in_params:
-                    self._grads = tf.gradients(self._loss, train_params, self.training_weight)
-                else:
-                    self._grads = tf.gradients(self._loss, train_params + in_params, self.training_weight)
-                    self._input_grads = self._grads[len(train_params):]
+                self._grads = tf.gradients(self._loss, train_params + in_params, self.training_weight)
+                self._input_grads = self._grads[len(train_params):]
 
-                if len(train_params) > 0:
-                    self._update = self.opt.apply_gradients(zip(self._grads[:len(train_params)], train_params),
-                                                            global_step=self.global_step)
-                else:
-                    self._update = tf.assign_add(self.global_step, 1)
+            if len(train_params) > 0:
+                self._update = self.opt.apply_gradients(zip(self._grads[:len(train_params)], train_params),
+                                                        global_step=self.global_step)
+            else:
+                self._update = tf.assign_add(self.global_step, 1)
 
-            if l2_lambda > 0.0:
-                l2 = tf.reduce_sum(array_ops.pack([tf.nn.l2_loss(t) for t in train_params]))
-                l2_loss = l2_lambda * l2
-                if is_batch_training:
-                    l2_grads = tf.gradients(l2_loss, train_params)
-                    self._l2_accumulate_gradients = acc_opt.apply_gradients(zip(l2_grads, self._acc_gradients))
-                    self._l2_acc_loss = acc_opt.apply_gradients([(l2_loss, self._loss)])
-                else:
-                    self._l2_update = tf.train.GradientDescentOptimizer(self.learning_rate).minimize(l2_loss, var_list=train_params)
-
-        self.saver = tf.train.Saver(filter(lambda v: self.name() in v.name, tf.all_variables()))
+        self.saver = tf.train.Saver([v for v in tf.all_variables() if self.name() in v.name])
 
     def _input_params(self):
         return None
@@ -154,7 +116,7 @@ class AbstractKBScoringModel:
         while i < len(triples):
             batch_size = min(self._batch_size, len(triples)-i)
             self._start_adding_triples()
-            for j in xrange(batch_size):
+            for j in range(batch_size):
                 self._add_triple_to_input(triples[i+j], j)
             self._finish_adding_triples(batch_size)
 
@@ -173,7 +135,7 @@ class AbstractKBScoringModel:
         '''
         assert self._is_train or self._is_batch_training, "model has to be created in training mode!"
 
-        assert len(pos_triples) + reduce(lambda acc, x: acc+len(x), neg_triples, 0) == self._batch_size, \
+        assert len(pos_triples) + functools.reduce(lambda acc, x: acc+len(x), neg_triples, 0) == self._batch_size, \
             "batch_size and provided batch do not fit"
 
         j = 0
@@ -298,7 +260,7 @@ class ModelO(AbstractKBScoringModel):
 
         rels = self._tuple_rels_lookup.get((s_i, o_i))
         if rels:
-            for i in xrange(len(rels)):
+            for i in range(len(rels)):
                 if rels[i] != r_i:
                     self._sparse_indices.append([j, i])
                     self._sparse_values.append(rels[i])
@@ -339,7 +301,36 @@ class WeightedModelO(ModelO):
 
     def _finish_adding_triples(self, batch_size):
         ModelO._finish_adding_triples(self, batch_size)
-        self._feed_dict[self._gather_rels_input] = map(lambda x: x[0], self._sparse_indices)
+        self._feed_dict[self._gather_rels_input] = [x[0] for x in self._sparse_indices]
+
+    def _scoring_f(self):
+        with tf.device("/cpu:0"):
+            E_rels = tf.get_variable("E_r", [self._num_relations * 2 + 1, self._size])
+            #E_tup_rels = tf.get_variable("E_tup_r", [2 * self._num_relations + 1, self._size])  # rels + inv rels + default rel
+
+        # duplicate rels to fit with observations
+        e_rel = tf.gather(tf.tanh(tf.nn.embedding_lookup(E_rels, self._rel_input)), self._gather_rels_input)
+        e_tup_rels = tf.tanh(tf.nn.embedding_lookup(E_rels, self._sparse_values_input))
+
+        scores_flat = tf_util.batch_dot(e_rel, e_tup_rels)
+        # for softmax set empty cells to something very small, so weight becomes practically zero
+        scores = tf.sparse_to_dense(self._sparse_indices_input, self._shape_input,
+                                    scores_flat, default_value=-1e-3)
+        softmax = tf.nn.softmax(scores)
+        weighted_scores = tf.reduce_sum(scores * softmax, reduction_indices=[1], keep_dims=False)
+
+        return weighted_scores
+
+
+class AssociativeModelO(ModelO):
+
+    def _init_inputs(self):
+        ModelO._init_inputs(self)
+        self._gather_rels_input = tf.placeholder(tf.int64, name="gathered_rels")
+
+    def _finish_adding_triples(self, batch_size):
+        ModelO._finish_adding_triples(self, batch_size)
+        self._feed_dict[self._gather_rels_input] = [x[0] for x in self._sparse_indices]
 
     def _scoring_f(self):
         with tf.device("/cpu:0"):
@@ -386,7 +377,7 @@ class ModelN(ModelO):
 
         rels = self._tuple_rels_lookup.get((s_i, o_i))
         if rels:
-            for i in xrange(len(rels)):
+            for i in range(len(rels)):
                 if rels[i] != r_i:
                     cooc_id = self._rel_cooc_lookup.get((r_i, rels[i]))
                     if cooc_id:
@@ -477,9 +468,9 @@ class CombinedModel(AbstractKBScoringModel):
         return self.__name
 
     def _scoring_f(self):
-        weights = map(lambda _: tf.Variable(float(1)), xrange(len(self._models)-1))
+        weights = map(lambda _: tf.Variable(float(1)), range(len(self._models)-1))
         scores = [self._models[0]._scores]
-        for i in xrange(len(self._models)-1):
+        for i in range(len(self._models)-1):
             scores.append(self._models[i+1]._scores * weights[i])
         return tf.reduce_sum(tf.pack(scores), 0)
 

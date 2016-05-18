@@ -15,7 +15,7 @@ class BatchNegTypeSampler:
         self.reset()
         self.__pool = Pool()
 
-        self._rngs = [random.Random(random.randint(0, 1000)) for _ in xrange(2*pos_per_batch)]
+        self._rngs = [random.Random(random.randint(0, 1000)) for _ in range(2*pos_per_batch)]
 
         self._objs = list(self.kb.get_symbols(2))
         self._subjs = list(self.kb.get_symbols(1))
@@ -69,14 +69,14 @@ class BatchNegTypeSampler:
                 obj_ts[t] += 1
 
         # sort types for relations by count
-        for rel_role, types in rel_types.iteritems():
+        for rel_role, types in rel_types.items():
             if rel_role not in self.rel_types:
                 self.rel_types[rel_role] = []  # distinction between subj and obj types
             self.rel_types[rel_role].extend(map(lambda x: x[0], sorted(types.items(), key=lambda x:-x[1])))
 
     # @profile
     def reset(self):
-        self.todo_facts = list(xrange(self.num_facts))
+        self.todo_facts = list(range(self.num_facts))
         random.shuffle(self.todo_facts)
         self.todo_facts = self.todo_facts[:-(self.num_facts % self.pos_per_batch)]
         self.count = 0
@@ -121,7 +121,7 @@ class BatchNegTypeSampler:
         # sampling code is optimized; no use of remove for lists (since it is O(n))
         if position == "obj":
             last = len(neg_candidates)-1  # index of last good candidate
-            for _ in xrange(self.neg_per_pos):
+            for _ in range(self.neg_per_pos):
                 x = None
                 while not x or x == disallowed or self.kb.contains_fact(True, "train", rel, subj, x):
                     i = rng.randint(0, last)
@@ -137,7 +137,7 @@ class BatchNegTypeSampler:
                 neg_triples.append((rel, subj, x))
         else:
             last = len(neg_candidates)-1  # index of last good candidate
-            for _ in xrange(self.neg_per_pos):
+            for _ in range(self.neg_per_pos):
                 x = None
                 while not x or x == disallowed or self.kb.contains_fact(True, "train", rel, x, obj):
                     i = rng.randint(0, last)
@@ -162,7 +162,7 @@ class BatchNegTypeSampler:
         self.count += 1
         self.todo_facts = self.todo_facts[self.pos_per_batch::]
         if position == "both":
-            pos = [self.facts[pos_idx[i % self.pos_per_batch]] for i in xrange(self.pos_per_batch*2)]
+            pos = [self.facts[pos_idx[i % self.pos_per_batch]] for i in range(self.pos_per_batch*2)]
         else:
             pos = [self.facts[i] for i in pos_idx]
 
@@ -171,15 +171,15 @@ class BatchNegTypeSampler:
                 lambda i: self.__get_neg_examples(pos[i], "obj", self._rngs[i])
                 if i < self.pos_per_batch else
                 self.__get_neg_examples(pos[i], "subj", self._rngs[i]),
-                (i for i in xrange(self.pos_per_batch*2)))
+                (i for i in range(self.pos_per_batch*2)))
 
         if position == "subj":
             negs = self.__pool.map(lambda i: self.__get_neg_examples(pos[i], "subj", self._rngs[i]),
-                                   (i for i in xrange(self.pos_per_batch)))
+                                   (i for i in range(self.pos_per_batch)))
 
         if position == "obj":
             negs = self.__pool.map(lambda i: self.__get_neg_examples(pos[i], "obj", self._rngs[i]),
-                                   (i for i in xrange(self.pos_per_batch)))
+                                   (i for i in range(self.pos_per_batch)))
 
         return pos, negs
 

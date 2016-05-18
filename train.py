@@ -10,6 +10,7 @@ import sys
 from kb import subsample_kb
 import shutil
 import json
+import functools
 
 
 # data loading specifics
@@ -60,7 +61,7 @@ if FLAGS.batch_train:
 random.seed(FLAGS.random_seed)
 tf.set_random_seed(FLAGS.random_seed)
 
-print "Loading KB ..."
+print("Loading KB ...")
 kb = load_fb15k(FLAGS.fb15k_dir, with_text=not FLAGS.kb_only)
 if FLAGS.subsample_kb > 0:
     kb = subsample_kb(kb, FLAGS.subsample_kb)
@@ -90,35 +91,35 @@ train_dir = os.path.join(FLAGS.save_dir, "train")
 
 i = 0
 
-subsample_validation = map(lambda x: x[0], kb.get_all_facts_of_arity(2, "valid"))
+subsample_validation = [x[0] for x in kb.get_all_facts_of_arity(2, "valid")]
 if len(subsample_validation) > 5000:
     subsample_validation = random.sample(subsample_validation, 5000)
 
 
 if FLAGS.ckpt_its <= 0:
-    print "Setting checkpoint iteration to size of whole epoch."
+    print("Setting checkpoint iteration to size of whole epoch.")
     FLAGS.ckpt_its = fact_sampler.epoch_size
 
 with tf.Session() as sess:
-    print "Creating model ..."
+    print("Creating model ...")
     model = create_model(kb, FLAGS.size, batch_size, num_neg=FLAGS.num_neg, learning_rate=FLAGS.learning_rate,
                          l2_lambda=FLAGS.l2_lambda, is_batch_training=FLAGS.batch_train, model=FLAGS.model,
                          observed_sets=FLAGS.observed_sets, composition=FLAGS.composition,
                          max_vocab_size=FLAGS.max_vocab)
 
-    print "Created model: " + model.name()
+    print("Created model: " + model.name())
 
     if os.path.exists(train_dir) and any("ckpt" in x for x in os.listdir(train_dir)):
         newest = max(map(lambda x: os.path.join(train_dir, x),
                          filter(lambda x: ".ckpt" in x, os.listdir(train_dir))), key=os.path.getctime)
-        print "Loading from checkpoint " + newest
+        print("Loading from checkpoint " + newest)
         model.saver.restore(sess, newest)
     else:
         if not os.path.exists(train_dir):
             os.makedirs(train_dir)
         sess.run(tf.initialize_all_variables())
 
-    num_params = reduce(lambda acc, x: acc + x.size, sess.run(tf.trainable_variables()), 0)
+    num_params = functools.reduce(lambda acc, x: acc + x.size, sess.run(tf.trainable_variables()), 0)
     print("Num params: %d" % num_params)
 
 
@@ -161,12 +162,12 @@ with tf.Session() as sess:
         sys.stdout.flush()
 
         if end_of_epoch and not fact_sampler.end_of_epoch():
-            print ""
+            print("")
             e += 1
-            print "Epoch %d done!" % e
+            print("Epoch %d done!" % e)
             if FLAGS.batch_train:
                 loss_without_l2 = sess.run(model._loss) / FLAGS.pos_per_batch / FLAGS.ckpt_its / 2
-                print "Per example loss without L2 %.3f" % loss_without_l2
+                print("Per example loss without L2 %.3f" % loss_without_l2)
                 model.acc_l2_gradients(sess)
                 loss = model.update(sess)
                 model.reset_gradients_and_loss(sess)
@@ -174,18 +175,18 @@ with tf.Session() as sess:
         if (end_of_epoch and not fact_sampler.end_of_epoch() and FLAGS.batch_train) or (not FLAGS.batch_train and i % FLAGS.ckpt_its == 0):
             if not FLAGS.batch_train:
                 loss /= FLAGS.ckpt_its
-                print ""
-                print "%d%% in epoch done." % (100*current_ct/fact_sampler.epoch_size)
-            # Print statistics for the previous epoch.
+                print("")
+                print("%d%% in epoch done." % (100*current_ct/fact_sampler.epoch_size))
+            # print(statistics for the previous epoch.)
             step_time /= FLAGS.ckpt_its
-            print "global step %d learning rate %.4f, step-time %.3f, loss %.4f" % (model.global_step.eval(),
+            print("global step %d learning rate %.4f, step-time %.3f, loss %.4f" % (model.global_step.eval(),
                                                                                     model.learning_rate.eval(),
-                                                                                    step_time, loss)
+                                                                                    step_time, loss))
             step_time, loss = 0.0, 0.0
             valid_loss = 0.0
 
-            # Run evals on development set and print their perplexity.
-            print "########## Validation ##############"
+            # Run evals on development set and print(their perplexity.)
+            print("########## Validation ##############")
             (mrr_a, _), (mrr_t, _), (mrr_nt, _) = eval_triples(sess, kb, model, subsample_validation, verbose=True)
 
             if FLAGS.valid_mode == "a":
@@ -202,7 +203,7 @@ with tf.Session() as sess:
                 print("Decaying learningrate.")
                 sess.run(model.learning_rate_decay_op)
                 if len(previous_mrrs) >= 2 and previous_mrrs[-1] <= previous_mrrs[-2]+1e-3:
-                    print "Stop learning!"
+                    print("Stop learning!")
                     break
 
             if not best_path or mrr > max(previous_mrrs):
@@ -211,14 +212,14 @@ with tf.Session() as sess:
                 best_path = model.saver.save(sess, checkpoint_path, global_step=model.global_step)
             previous_mrrs.append(mrr)
 
-            print "####################################"
+            print("####################################")
 
     best_valid_mrr = max(previous_mrrs)
     print("Restore model to best on validation, with MRR: %.3f" % best_valid_mrr)
     model.saver.restore(sess, best_path)
     model_name = best_path.split("/")[-1]
     shutil.copyfile(best_path, os.path.join(FLAGS.save_dir, model_name))
-    print "########## Test ##############"
+    print("########## Test ##############")
     (mrr, top10), (mrr_wt, top10_wt), (mrr_nt, top10_nt) = eval_triples(sess, kb, model, map(lambda x: x[0], kb.get_all_facts_of_arity(2, "test")), verbose=True)
     with open(os.path.join(FLAGS.save_dir, "result.txt"), 'w') as f:
         f.write("best model: %s\n\nMRR: %.3f\nHits10: %.3f\n\n" % (model_name, mrr, top10))
@@ -228,9 +229,9 @@ with tf.Session() as sess:
         f.flush()
     with open(os.path.join(FLAGS.save_dir, "model.cfg"), 'w') as f:
         f.write("size=%d\n" % FLAGS.size)
-        f.write("path=%s\n" % os.path.join(FLAGS.save_dir,model_name))
+        f.write("path=%s\n" % os.path.join(FLAGS.save_dir, model_name))
         if FLAGS.composition:
             f.write("composition=%s\n" % FLAGS.composition)
         f.write("model=%s" % FLAGS.model)
         f.flush()
-    print "##############################"
+    print("##############################")

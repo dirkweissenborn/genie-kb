@@ -115,7 +115,7 @@ def eval_triples(sess, kb, model, triples, position="both", verbose=False):
                 sys.stdout.write("\r%.1f%%, mrr: %.3f, top10: %.3f" % (i*100.0 / total, rec_rank / ct, top10 / ct))
                 sys.stdout.flush()
 
-    print ""
+    print("")
 
     mrr = rec_rank / ct
     top10 /= ct
@@ -130,12 +130,12 @@ def eval_triples(sess, kb, model, triples, position="both", verbose=False):
     top10_nt /= total_nt
 
     if verbose:
-        print "MRR: %.3f" % mrr
-        print "Top10: %.3f" % top10
-        print "MRR wt: %.3f" % mrr_wt
-        print "Top10 wt: %.3f" % top10_wt
-        print "MRR nt: %.3f" % mrr_nt
-        print "Top10 nt: %.3f" % top10_nt
+        print("MRR: %.3f" % mrr)
+        print("Top10: %.3f" % top10)
+        print("MRR wt: %.3f" % mrr_wt)
+        print("Top10 wt: %.3f" % top10_wt)
+        print("MRR nt: %.3f" % mrr_nt)
+        print("Top10 nt: %.3f" % top10_nt)
 
     return (mrr, top10), (mrr_wt, top10_wt), (mrr_nt, top10_nt)
 

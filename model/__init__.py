@@ -1,6 +1,7 @@
-from models import *
-from comp_models import *
-from comp_functions import *
+from model.models import *
+from model.comp_models import *
+from model.seq_comp_models import *
+from model.comp_functions import *
 from data.load_fb15k237 import split_relations
 
 
@@ -21,10 +22,10 @@ def create_model(kb, size, batch_size, is_train=True, num_neg=200, learning_rate
     if composition and not comp_util:
         comp_util = CompositionUtil(kb, num_buckets, split_relations, max_vocab_size)
     if not isinstance(model, list):
-        comp_batch_size = batch_size / (num_neg + 1)
+        comp_batch_size = batch_size // (num_neg + 1)
         if not composition:
             composition = ""
-        with vs.variable_scope("Comp" + model + "__" + composition):
+        with tf.variable_scope("Comp" + model + "__" + composition):
             comp_size = 2*size if model == "ModelE" else size
             if composition == "RNN":
                 composition = TanhRNNCompF(comp_size, comp_batch_size, comp_util, learning_rate)
@@ -47,8 +48,8 @@ def create_model(kb, size, batch_size, is_train=True, num_neg=200, learning_rate
 
         if model == "ModelF":
             return ModelF(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
-        elif model == "BiLSTMModel":
-            return BiLSTMModel(kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
+        elif model == "CompBiLSTM":
+            return CompBiRNNModel(BasicLSTMCell(size//2), kb, size, batch_size, is_train, num_neg, learning_rate, l2_lambda, is_batch_training)
         elif model == "DistMult":
             if composition:
                 return CompDistMult(kb, size, batch_size, composition, is_train, num_neg, learning_rate)
@@ -114,16 +115,16 @@ def load_models(sess, kb, batch_size, config_files, comp_util=None):
     return ms
 
 
-@tf.RegisterGradient("SparseToDense")
-def _tf_sparse_to_dense_grad(op, grad):
-    grad_flat = tf.reshape(grad, [-1])
-    sparse_indices = op.inputs[0]
-    d = tf.gather(tf.shape(sparse_indices), [0])
-    shape = op.inputs[1]
-    cols = tf.gather(shape, [1])
-    ones = tf.expand_dims(tf.ones(d, dtype=tf.int64), 1)
-    cols = ones * cols
-    conc = tf.concat(1, [cols, ones])
-    sparse_indices = tf.reduce_sum(tf.mul(sparse_indices, conc), 1)
-    in_grad = tf.nn.embedding_lookup(grad_flat, sparse_indices)
-    return None, None, in_grad, None
+#@tf.RegisterGradient("SparseToDense")
+#def _tf_sparse_to_dense_grad(op, grad):
+#    grad_flat = tf.reshape(grad, [-1])
+#    sparse_indices = op.inputs[0]
+#    d = tf.gather(tf.shape(sparse_indices), [0])
+#    shape = op.inputs[1]
+#    cols = tf.gather(shape, [1])
+#    ones = tf.expand_dims(tf.ones(d, dtype=tf.int64), 1)
+#    cols = ones * cols
+#    conc = tf.concat(1, [cols, ones])
+#    sparse_indices = tf.reduce_sum(tf.mul(sparse_indices, conc), 1)
+#    in_grad = tf.nn.embedding_lookup(grad_flat, sparse_indices)
+#    return None, None, in_grad, None

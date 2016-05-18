@@ -34,7 +34,7 @@ def load_type_constraints(kb, fn, arg_dim, rel_dim=0):
     with open(fn, 'r') as f:
         for l in f:
             split = l.strip().split("\t")
-            for i in xrange(1, len(split)):
+            for i in range(1, len(split)):
                 kb.add_compatible_arg(split[0], arg_dim, split[i], rel_dim)
 
 
@@ -55,7 +55,7 @@ def split_relations(rel):
     elif "[XXX]" in rel:
         dep_path_arr = []
         c = 0
-        for i in xrange(len(rel)-2):
+        for i in range(len(rel)-2):
             if rel[i:i+3] == ":<-":
                 if c > 0:  # do not keep [XXX]
                     dep_path_arr.append(rel[c:i])
@@ -81,7 +81,7 @@ def _load_dep_paths(fn, kb, typ="train"):
             [id1, dep_path, id2, ct] = l.strip().split("\t")
             dep_path_arr = []
             c = 0
-            for i in xrange(len(dep_path)-2):
+            for i in range(len(dep_path)-2):
                 if dep_path[i:i+3] == ":<-":
                     if c > 0:  # do not keep [XXX]
                         dep_path_arr.append(dep_path[c:i])
@@ -123,7 +123,7 @@ def _load_dep_paths(fn, vocab, concept_vocab):
             [id1, dep_path, id2, ct] = l.strip().split("\t")
             dep_path_arr = []
             c = 0
-            for i in xrange(len(dep_path)-2):
+            for i in range(len(dep_path)-2):
                 if dep_path[i:i+3] == ":<-":
                     if c > 0:  # do not keep [XXX]
                         dep_path_arr.append(dep_path[c:i])
@@ -144,7 +144,7 @@ def _load_dep_paths(fn, vocab, concept_vocab):
                 _update(id1, concept_vocab)
                 _update(id2, concept_vocab)
                 triple = (id1, dep_path_arr, id2)
-                for i in xrange(int(ct)):
+                for i in range(int(ct)):
                     triples.append(triple)
     return triples
 

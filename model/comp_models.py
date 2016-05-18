@@ -50,11 +50,11 @@ class CompositionalKBScoringModel(AbstractKBScoringModel):
 
     def _composition_forward(self, sess):
         rel_embeddings = self._comp_f.forward(sess, self._rels)
-        for b in xrange(len(rel_embeddings)):
+        for b in range(len(rel_embeddings)):
             self._rel_in[b] = rel_embeddings[b]
 
     def _composition_backward(self, sess, grads):
-        grad_list = [grads[0][b] for b in xrange(grads[0].shape[0])]
+        grad_list = [grads[0][b] for b in range(grads[0].shape[0])]
         self._comp_f.backward(sess, grad_list)
 
     def score_triples(self, sess, triples):
@@ -63,7 +63,7 @@ class CompositionalKBScoringModel(AbstractKBScoringModel):
         while i < len(triples):
             batch_size = min(self._batch_size, len(triples)-i)
             self._start_adding_triples()
-            for j in xrange(batch_size):
+            for j in range(batch_size):
                 self._add_triple_to_input(triples[i+j], j)
             self._finish_adding_triples(batch_size)
             self._composition_forward(sess)
@@ -195,7 +195,7 @@ class CompModelO(CompositionalKBScoringModel):
         o_i = self._kb.get_id(obj, 2)
         rels = self._tuple_rels_lookup.get((s_i, o_i))
         if rels:
-            for i in xrange(len(rels)):
+            for i in range(len(rels)):
                 if rels[i] != rel:
                     self._rels.append(rels[i])
 
@@ -219,7 +219,7 @@ class CompModelO(CompositionalKBScoringModel):
             self._rel_in[b] = rel_embeddings[off]
             end = self.__offsets[b+1] if len(self.__offsets) > (b+1) else len(self._rels)
             self._observed_in[b] *= 0.0
-            for i in xrange(off+1, end):
+            for i in range(off+1, end):
                 self._observed_in[b] += rel_embeddings[i]
             if (end-off-1) > 0:
                 self._observed_in[b] /= (end-off-1)
@@ -232,7 +232,7 @@ class CompModelO(CompositionalKBScoringModel):
             observed_grad = grads[1][b]
             if (end-off-1) > 0:
                 observed_grad /= (end-off-1)
-            for i in xrange(off+1, end):
+            for i in range(off+1, end):
                 grad_list.append(observed_grad)
         self._comp_f.backward(sess, grad_list)
 
@@ -315,7 +315,7 @@ class CompWeightedModelO(CompModelO):
                 self._rel_in.append(zero_v)  # default relation if none was observed
                 self._obs_in.append(zero_v)
             else:
-                for i in xrange(end - (off+1)):
+                for i in range(end - (off+1)):
                     self._rel_in.append(rel_embeddings[off])
                 self._obs_in.extend(rel_embeddings[off+1:end])
 
@@ -328,7 +328,7 @@ class CompWeightedModelO(CompModelO):
                 _off = off - b + skip
                 _end = end - b + skip - 1
                 rel_grad = grads[0][_off]
-                for i in xrange(_off+1, _end):
+                for i in range(_off+1, _end):
                     rel_grad += grads[0][i]
                 grad_list.append(rel_grad)
 
@@ -362,9 +362,9 @@ class CompCombinedModel(CompositionalKBScoringModel):
         return self.__name
 
     def _scoring_f(self):
-        weights = map(lambda _: tf.Variable(float(1)), xrange(len(self._models)-1))
+        weights = [tf.Variable(float(1))] * (len(self._models)-1)
         scores = [self._models[0]._scores]
-        for i in xrange(len(self._models)-1):
+        for i in range(len(self._models)-1):
             scores.append(self._models[i+1]._scores * weights[i])
         return tf.reduce_sum(tf.pack(scores), 0)
 
