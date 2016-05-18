@@ -35,6 +35,7 @@ tf.app.flags.DEFINE_integer("subsample_kb", -1, "num of entities in subsampled k
 tf.app.flags.DEFINE_boolean("kb_only", False, "Only load and train on FB relations, ignoring text.")
 tf.app.flags.DEFINE_boolean("batch_train", False, "Use batch training.")
 tf.app.flags.DEFINE_boolean("type_constraint", False, "Use type constraint during sampling.")
+tf.app.flags.DEFINE_string("device", "/cpu:0", "Use this device.")
 tf.app.flags.DEFINE_string("save_dir", "save/" + time.strftime("%d%m%Y_%H%M%S", time.localtime()),
                            "Where to save model and its configuration, always last will be kept.")
 tf.app.flags.DEFINE_string("model", "DistMult",
@@ -100,12 +101,15 @@ if FLAGS.ckpt_its <= 0:
     print("Setting checkpoint iteration to size of whole epoch.")
     FLAGS.ckpt_its = fact_sampler.epoch_size
 
-with tf.Session() as sess:
+config = tf.ConfigProto(allow_soft_placement=True)
+config.gpu_options.allow_growth = True
+with tf.Session(config=config) as sess:
     print("Creating model ...")
-    model = create_model(kb, FLAGS.size, batch_size, num_neg=FLAGS.num_neg, learning_rate=FLAGS.learning_rate,
-                         l2_lambda=FLAGS.l2_lambda, is_batch_training=FLAGS.batch_train, model=FLAGS.model,
-                         observed_sets=FLAGS.observed_sets, composition=FLAGS.composition,
-                         max_vocab_size=FLAGS.max_vocab)
+    with tf.device(FLAGS.device):
+        model = create_model(kb, FLAGS.size, batch_size, num_neg=FLAGS.num_neg, learning_rate=FLAGS.learning_rate,
+                             l2_lambda=FLAGS.l2_lambda, is_batch_training=FLAGS.batch_train, model=FLAGS.model,
+                             observed_sets=FLAGS.observed_sets, composition=FLAGS.composition,
+                             max_vocab_size=FLAGS.max_vocab)
 
     print("Created model: " + model.name())
 
