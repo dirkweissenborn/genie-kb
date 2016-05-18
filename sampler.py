@@ -11,7 +11,7 @@ class BatchNegTypeSampler:
         self.type_constraint = type_constraint
         self.facts = [f[0] for f in self.kb.get_all_facts() if f[2] == which_set]
         self.num_facts = len(self.facts)
-        self.epoch_size = self.num_facts / self.pos_per_batch
+        self.epoch_size = self.num_facts // self.pos_per_batch
         self.reset()
         self.__pool = Pool()
 
