@@ -2,6 +2,7 @@ from model.models import *
 import tensorflow as tf
 import model
 from tensorflow.models.rnn.rnn_cell import *
+import functools
 
 
 class CompositionalKBScoringModel(AbstractKBScoringModel):
@@ -81,7 +82,7 @@ class CompositionalKBScoringModel(AbstractKBScoringModel):
         '''
         assert self._is_train, "model has to be created in training mode!"
 
-        assert len(pos_triples) + reduce(lambda acc, x: acc+len(x), neg_triples, 0) == self._batch_size, \
+        assert len(pos_triples) + functools.reduce(lambda acc, x: acc+len(x), neg_triples, 0) == self._batch_size, \
             "batch_size and provided batch do not fit"
 
         j = 0

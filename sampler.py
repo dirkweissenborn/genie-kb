@@ -20,10 +20,6 @@ class BatchNegTypeSampler:
         self._objs = list(self.kb.get_symbols(2))
         self._subjs = list(self.kb.get_symbols(1))
 
-        # we use sampling with type constraints
-        #if type_constraint:
-        #    self.init_types()
-
     def init_types(self):
         # add types to concepts
         concept_types = dict()

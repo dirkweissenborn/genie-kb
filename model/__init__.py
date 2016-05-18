@@ -20,7 +20,7 @@ def create_model(kb, size, batch_size, is_train=True, num_neg=200, learning_rate
     :return: Model(s) of type "type"
     '''
     if composition and not comp_util:
-        comp_util = CompositionUtil(kb, num_buckets, split_relations, max_vocab_size)
+        comp_util = CompositionUtil(kb, split_relations, max_vocab_size)
     if not isinstance(model, list):
         comp_batch_size = batch_size // (num_neg + 1)
         if not composition:

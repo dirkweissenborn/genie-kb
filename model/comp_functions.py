@@ -3,11 +3,12 @@ import tensorflow as tf
 import model
 from tensorflow.models.rnn.rnn_cell import *
 from tf_util import get_tensors
+from model import my_rnn
 
 class CompositionUtil:
-    """Holds information on decomposing relations, word vocabulary, buckets, their sizes etc."""
+    """Holds information on decomposing relations, word vocabulary, etc."""
 
-    def __init__(self, kb, num_buckets, rel2seq, max_size):
+    def __init__(self, kb, rel2seq, max_size):
         self._kb = kb
         self._rel2seq = rel2seq
 
@@ -15,7 +16,7 @@ class CompositionUtil:
         self._vocab = {"#PADDING#": 0}
         self._vocab["#UNK#"] = 1
         counts = {}
-        max_l = 0
+        self.max_length = 0
         l_count = {}
         total = 0
         must_contain = set()
@@ -29,7 +30,7 @@ class CompositionUtil:
                 else:
                     counts[word] += 1
             l = len(s)
-            max_l = max(max_l, l)
+            self.max_length = max(self.max_length, l)
             if l not in l_count:
                 l_count[l] = 0
             l_count[l] += 1
@@ -40,7 +41,7 @@ class CompositionUtil:
                 self._vocab[k] = len(self._vocab)
         else:
             keys, values = list(), list()
-            for k, v in counts.iteritems():
+            for k, v in counts.items():
                 if k not in must_contain:
                     keys.append(k)
                     values.append(-v)
@@ -54,21 +55,6 @@ class CompositionUtil:
             for i in range(max_size):
                 k = keys[most_frequent[i]]
                 self._vocab[k] = len(self._vocab)
-
-        ct = 0
-        self.buckets = []
-        for l in range(max_l+1):
-            c = l_count.get(l)
-            if c:
-                ct += c
-                if ct % (total / num_buckets) < c:
-                    self.buckets.append(l)
-
-        if self.buckets and self.buckets[-1] != max_l:
-            if len(self.buckets) >= num_buckets:
-                self.buckets[-1] = max_l
-            else:
-                self.buckets.append(max_l)
 
     def rel2word_ids(self, rel):
         return [self._vocab.get(w, 1) for w in self._rel2seq(rel)]  # use unknown word if w is not in vocab
@@ -86,25 +72,20 @@ class CompositionFunction:
         self._batch_size = batch_size
         self.learning_rate = tf.Variable(float(learning_rate), trainable=False, name="lr")
         self.opt = tf.train.AdamOptimizer(learning_rate=self.learning_rate, beta1=0.0)
-        max_l = comp_util.buckets[-1]  # maximum length
+        max_l = comp_util.max_length  # maximum length
         self._seq_inputs = [tf.placeholder(tf.int64, shape=[None], name="seq_input%d" % i)
                             for i in range(max_l)]
+        self._lengths = tf.placeholder(tf.int64, shape=[None], name="lengths")
         with vs.variable_scope("composition", initializer=model.default_init()):
-            seq_outputs = self._comp_f()
-        self._bucket_outputs = []
-
-        for l in comp_util.buckets:
-            self._bucket_outputs.append(seq_outputs[l-1])
+            self.output = self._comp_f()
 
         self._input = [[0]*self._batch_size for _ in range(max_l)]  # fill input with padding
         self._feed_dict = dict()
         train_params = [v for v in tf.trainable_variables() if "composition" in v.name]
         self._grad = tf.placeholder(tf.float32, shape=[None, self._size], name="rel_grad")
         self._grad_in = np.zeros((self._batch_size, self._size), dtype=np.float32)
-        self._grads = [tf.gradients(o, train_params, self._grad) for o in self._bucket_outputs]
-        self._bucket_update = [self.opt.apply_gradients(zip(grads, train_params))
-                               for o, grads in zip(self._bucket_outputs, self._grads)]
-        #self._state_tensors = [[o] + list(get_tensors([o], self._seq_inputs, False)) for o in self._bucket_outputs]
+        self._grads = tf.gradients(self.output, train_params, self._grad)
+        self._update = self.opt.apply_gradients(zip(self._grads, train_params))
 
     def _comp_f(self):
         pass
@@ -141,28 +122,19 @@ class CompositionFunction:
         self._states = []
         while i < len(self._last_rels):
             batch_size = min(self._batch_size, len(self._last_rels)-i)
-            batch_length = len(self._last_rels[self._last_sorted[i+batch_size-1]][1])
-            bucket_id = 0
-            for idx, bucket_length in enumerate(self._comp_util.buckets):
-                if bucket_length >= batch_length:
-                    batch_length = bucket_length
-                    bucket_id = idx
-                    break
+            lengths = []
             for b in range(batch_size):
                 _, rel_symbols = self._last_rels[self._last_sorted[i+b]]
-                offset = batch_length-len(rel_symbols)
-                for j in range(offset):
-                    self._add_input(b, j, 0)  # padding
                 for j, w_id in enumerate(rel_symbols):
-                    self._add_input(b, j+offset, w_id)
+                    self._add_input(b, j, w_id)
+                lengths.append(len(rel_symbols))
+                for j in range(len(rel_symbols), self._comp_util.max_length):
+                    self._add_input(b, j, 0)  # padding
 
-            self._finish_batch(batch_size, batch_length)
-            #if i > 0:
-            out = sess.run(self._bucket_outputs[bucket_id], feed_dict=self._feed_dict)
-           # else:
-            #state = sess.run(self._state_tensors[bucket_id], feed_dict=self._feed_dict)
-            #out = state[0]
-            #self._states.append(state)
+            self._finish_batch(batch_size, self._comp_util.max_length)
+            self._feed_dict[self._lengths] = lengths
+            out = sess.run(self.output, feed_dict=self._feed_dict)
+
             for b in range(batch_size):
                 rel_idx = self._last_sorted[i+b]
                 rel, _ = self._last_rels[rel_idx]
@@ -172,49 +144,30 @@ class CompositionFunction:
             i += batch_size
         return compositions
 
-    #TODO: optimization
     def backward(self, sess, grads):
         # ineffective because forward pass is run here again
         i = 0
-        c = 0
         while i < len(self._last_rels):
             batch_size = min(len(self._last_rels)-i, self._batch_size)
-            batch_length = len(self._last_rels[self._last_sorted[i+batch_size-1]][1])
-            bucket_id = 0
-            for idx, bucket_length in enumerate(self._comp_util.buckets):
-                if bucket_length >= batch_length:
-                    batch_length = bucket_length
-                    bucket_id = idx
-                    break
 
             self._grad_in *= 0.0  # zero grads
-
+            lengths = []
             for b in range(batch_size):
                 rel, rel_symbols = self._last_rels[self._last_sorted[i+b]]
-                offset = batch_length-len(rel_symbols)
-                for j in range(offset):
-                    self._add_input(b, j, 0)  # padding
                 for j, w_id in enumerate(rel_symbols):
-                    self._add_input(b, j+offset, w_id)
-
+                    self._add_input(b, j, w_id)
+                for j in range(len(rel_symbols), self._comp_util.max_length):
+                    self._add_input(b, j, 0)  # padding
+                lengths.append(len(rel_symbols))
                 for j in self._last_rel_groups[rel]:
                     self._grad_in[b] += grads[j]
 
-            self._finish_batch(batch_size, batch_length)
-
-            #if i > 0:
-            sess.run(self._bucket_update[bucket_id], feed_dict=self._feed_dict)
-            #else:
-            #feed = dict(zip(self._state_tensors[bucket_id], self._states[c]))
-            #feed.update(self._feed_dict)
-            #sess.run(self._bucket_update[bucket_id], feed_dict=feed)
-            #c += 1
-
+            self._finish_batch(batch_size, self._comp_util.max_length)
+            self._feed_dict[self._lengths] = lengths
+            sess.run(self._update, feed_dict=self._feed_dict)
             i += batch_size
-        # free states
-        #self._states = None
 
-
+#TODO: BROKEN due to refactoring
 class BoWCompF(CompositionFunction):
     def _comp_f(self):
         # word embedding matrix
@@ -243,7 +196,8 @@ class RNNCompF(CompositionFunction):
         shape = tf.shape(self._seq_inputs[0])  # current_batch_size x 1
         init = tf.tile(self._init_state, shape)
         init = tf.reshape(init, [-1, self._cell.state_size])
-        out = embedding_rnn_decoder(self._seq_inputs, init, self._cell, len(self._comp_util.vocab))[0]
+        out = my_rnn.rnn(self._cell, self._seq_inputs, init, sequence_length=self._lengths)[1]
+        out = tf.slice(out,[0, self._cell.state_size-self._cell.output_size],[-1,-1])
         return out
 
     def name(self):
@@ -276,43 +230,31 @@ class GRUCompF(RNNCompF):
 
 class BiRNNCompF(CompositionFunction):
     def __init__(self, cell, size, batch_size, comp_util, learning_rate=1e-2):
-        assert cell.output_size == size/2, "cell size must be size / 2 for BiRNNs"
+        assert cell.output_size == size//2, "cell size must be size / 2 for BiRNNs"
         self._cell = cell
         CompositionFunction.__init__(self, size, batch_size, comp_util, learning_rate)
-        self._rev_input = [[0]*self._batch_size for _ in range(len(self._input))]
-        #self._state_tensors = [[o] + list(get_tensors([o], self._seq_inputs + [self._init_state], False))
-        #                       for o in self._bucket_outputs]
-
-    def _finish_batch(self, batch_size, batch_length):
-        self._rev_input[:batch_length] = self._input[(batch_length-1)::-1]
-        if batch_size < self._batch_size:
-            for seq_in, inp in zip(self._seq_inputs, self._input):
-                self._feed_dict[seq_in] = inp[:batch_size]
-            for seq_in, inp in zip(self._rev_seq_inputs, self._rev_input):
-                self._feed_dict[seq_in] = inp[:batch_size]
-            self._feed_dict[self._grad] = self._grad_in[:batch_size]
-        else:
-            for seq_in, inp in zip(self._seq_inputs, self._input):
-                self._feed_dict[seq_in] = inp
-            for seq_in, inp in zip(self._rev_seq_inputs, self._rev_input):
-                self._feed_dict[seq_in] = inp
-            self._feed_dict[self._grad] = self._grad_in
 
     def _comp_f(self):
-        self._rev_seq_inputs = [tf.placeholder(tf.int64, shape=[None], name="seq_input%d" % i)
-                                for i in range(len(self._seq_inputs))]
+        inp = tf.reshape(tf.pack(self._seq_inputs), [self._comp_util.max_length, -1, 1])
+        rev_inp = tf.reverse_sequence(inp, self._lengths, 0, 1)
+        rev_inp = [tf.squeeze(x,[0,2]) for x in tf.split(0, self._comp_util.max_length, rev_inp)]
         self._init_state = tf.get_variable("init_state", [self._cell.state_size * 2])
-        shape = tf.shape(self._seq_inputs[0])  # current_batch_size
-        init = tf.tile(self._init_state, shape)
+        batch_size = tf.shape(self._seq_inputs[0])
+        init = tf.tile(self._init_state, batch_size)
         init = tf.reshape(init, [-1, self._cell.state_size * 2])
+        cell = EmbeddingWrapper(self._cell, len(self._comp_util.vocab), self._size)
 
         init_fw, init_bw = tf.split(1, 2, init)
 
         with vs.variable_scope("forward_rnn"):
-            out_fw = embedding_rnn_decoder(self._seq_inputs, init_fw, self._cell, len(self._comp_util.vocab), self._size)[0]
+            out_fw = my_rnn.rnn(cell, self._seq_inputs,init_fw, sequence_length=self._lengths)[1]
         with vs.variable_scope("backward_rnn"):
-            out_bw = embedding_rnn_decoder(self._rev_seq_inputs, init_bw, self._cell, len(self._comp_util.vocab), self._size)[0]
-        out = [tf.concat(1, [o_f, o_b]) for o_f, o_b in zip(out_fw, out_bw)]
+            out_bw = my_rnn.rnn(cell, rev_inp, init_bw, sequence_length=self._lengths)[1]
+
+        out_fw = tf.slice(out_fw,[0,cell.state_size-cell.output_size],[-1,-1])
+        out_bw = tf.slice(out_bw,[0,cell.state_size-cell.output_size],[-1,-1])
+
+        out = tf.concat(1, [out_fw, out_bw])
         return out
 
     def name(self):
@@ -321,7 +263,7 @@ class BiRNNCompF(CompositionFunction):
 
 class BiLSTMCompF(BiRNNCompF):
     def __init__(self, size, batch_size, comp_util, learning_rate=1e-2):
-        BiRNNCompF.__init__(self, BasicLSTMCell(size / 2), size, batch_size, comp_util, learning_rate)
+        BiRNNCompF.__init__(self, BasicLSTMCell(size // 2), size, batch_size, comp_util, learning_rate)
 
     def name(self):
         return "BiLSTM"
@@ -329,7 +271,7 @@ class BiLSTMCompF(BiRNNCompF):
 
 class BiTanhRNNCompF(BiRNNCompF):
     def __init__(self, size, batch_size, comp_util, learning_rate=1e-2):
-        BiRNNCompF.__init__(self, BasicRNNCell(size / 2), size, batch_size, comp_util, learning_rate)
+        BiRNNCompF.__init__(self, BasicRNNCell(size // 2), size, batch_size, comp_util, learning_rate)
 
     def name(self):
         return "BiRNN"
@@ -337,12 +279,12 @@ class BiTanhRNNCompF(BiRNNCompF):
 
 class BiGRUCompF(BiRNNCompF):
     def __init__(self, size, batch_size, comp_util, learning_rate=1e-2):
-        BiRNNCompF.__init__(self, GRUCell(size / 2), size, batch_size, comp_util, learning_rate)
+        BiRNNCompF.__init__(self, GRUCell(size // 2), size, batch_size, comp_util, learning_rate)
 
     def name(self):
         return "BiGRU"
 
-
+#TODO: BROKEN due to refactoring
 class ConvCompF(CompositionFunction):
     def __init__(self, width, size, batch_size, comp_util, learning_rate=1e-2):
         self._width = width
