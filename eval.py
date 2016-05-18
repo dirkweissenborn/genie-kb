@@ -11,22 +11,18 @@ def rank_triple(sess, kb, model, triple, position="obj"):
         if obj not in compatible:
             return float('Inf')
 
-        neg_triples = map(lambda e: (rel, subj, e), filter(lambda e:
-                                                           e != obj and
-                                                           not kb.contains_fact(True, "train", rel, subj, e) and
-                                                           not kb.contains_fact(True, "test", rel, subj, e) and
-                                                           not kb.contains_fact(True, "valid", rel, subj, e),
-                                                           compatible))
+        neg_triples = [(rel, subj, e) for e in compatible if e != obj and
+                                                            not kb.contains_fact(True, "train", rel, subj, e) and
+                                                            not kb.contains_fact(True, "test", rel, subj, e) and
+                                                            not kb.contains_fact(True, "valid", rel, subj, e)]
     else:
         compatible = kb.compatible_args_of(1, rel)
         if subj not in compatible:
             return float('Inf')
-        neg_triples = map(lambda e: (rel, e, obj), filter(lambda e:
-                                                          e != subj and
+        neg_triples = [(rel, e, obj) for e in compatible if e != subj and
                                                           not kb.contains_fact(True, "train", rel, e, obj) and
                                                           not kb.contains_fact(True, "test", rel, e, obj) and
-                                                          not kb.contains_fact(True, "valid", rel, e, obj),
-                                                          compatible))
+                                                          not kb.contains_fact(True, "valid", rel, e, obj)]
 
     if isinstance(model, list):
         scores = [m[0].score_triples(sess, [triple] + neg_triples) for m in model]
@@ -168,6 +164,6 @@ if __name__ == "__main__":
         model.saver.restore(sess, os.path.join(FLAGS.model_path))
         print("Loaded model.")
 
-        eval_triples(sess, kb, model, map( lambda x: x[0], kb.get_all_facts_of_arity(2, "test")), verbose=True)
+        eval_triples(sess, kb, model, [x[0] for x in kb.get_all_facts_of_arity(2, "test")], verbose=True)
 
 
