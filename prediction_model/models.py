@@ -24,14 +24,12 @@ class AbstractKBPredictionModel:
         self.global_step = tf.Variable(0, trainable=False, name="step")
 
         with vs.variable_scope(self.name(), initializer=self._init):
-            with tf.device("/cpu:0"):
-                self.opt = tf.train.AdamOptimizer(self.learning_rate, beta1=0.0)
+            self.opt = tf.train.AdamOptimizer(self.learning_rate, beta1=0.0)
             self._init_inputs()
             reps = self._comp_f()
 
             num_pos = batch_size
-            with tf.device("/cpu:0"):
-                E_candidate = tf.get_variable("E_candidate", [len(self.arg_vocab), self._size])
+            E_candidate = tf.get_variable("E_candidate", [len(self.arg_vocab), self._size])
 
             lookup_individual = tf.nn.embedding_lookup(E_candidate, self._y_input)
             self._score = tf_util.batch_dot(lookup_individual, reps)
@@ -201,9 +199,8 @@ class AbstractKBPredictionModel:
 class DistMult(AbstractKBPredictionModel):
 
     def _comp_f(self):
-        with tf.device("/cpu:0"):
-            E_candidate = tf.get_variable("E_candidate", [len(self.arg_vocab), self._size])
-            E_rel = tf.get_variable("E_rel", [len(self._kb.get_symbols(0)), self._size])
+        E_candidate = tf.get_variable("E_candidate", [len(self.arg_vocab), self._size])
+        E_rel = tf.get_variable("E_rel", [len(self._kb.get_symbols(0)), self._size])
 
         e_arg = tf.tanh(tf.nn.embedding_lookup(E_candidate, self._x_input))
         e_rel = tf.nn.embedding_lookup(E_rel, self._rel_input)
@@ -214,14 +211,12 @@ class DistMult(AbstractKBPredictionModel):
 class ModelE(AbstractKBPredictionModel):
 
     def _comp_f_fw(self):
-        with tf.device("/cpu:0"):
-            E_rel = tf.get_variable("E_rel_fw", [len(self._kb.get_symbols(0)), self._size])
+        E_rel = tf.get_variable("E_rel_fw", [len(self._kb.get_symbols(0)), self._size])
         e_rel = tf.nn.embedding_lookup(E_rel, self._rel_input)
         return e_rel
 
     def _comp_f_bw(self):
-        with tf.device("/cpu:0"):
-            E_rel = tf.get_variable("E_rel_bw", [len(self._kb.get_symbols(0)), self._size])
+        E_rel = tf.get_variable("E_rel_bw", [len(self._kb.get_symbols(0)), self._size])
         e_rel = tf.nn.embedding_lookup(E_rel, self._rel_input)
         return e_rel
 
