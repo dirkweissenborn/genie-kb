@@ -119,6 +119,7 @@ class CompDistMult(CompositionalKBScoringModel):
         self.e_subj = tf.tanh(tf.nn.embedding_lookup(E_subjs, self._subj_input))
         self.e_obj = tf.tanh(tf.nn.embedding_lookup(E_objs, self._obj_input))
         self.e_rel = self._rel_input  # relation is already embedded by composition function
+
         s_o_prod = self.e_obj * self.e_subj
 
         score = tf_util.batch_dot(self.e_rel, s_o_prod)
@@ -371,7 +372,7 @@ class CompCombinedModel(CompositionalKBScoringModel):
 
     def _add_triple_to_input(self, t, j):
         for m in self._models:
-            m._add_triple_to_input(t, j)
+            m._add_triple_and_negs_to_input(t, j)
 
     def _finish_adding_triples(self, batch_size):
         self._rels = []

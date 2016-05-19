@@ -112,7 +112,7 @@ class BatchNegTypeSampler:
         else:  # sample from all candidates
             neg_candidates = self._objs if position == "obj" else self._subjs
 
-        neg_triples = list()
+        neg_examples = list()
 
         # sampling code is optimized; no use of remove for lists (since it is O(n))
         if position == "obj":
@@ -130,7 +130,7 @@ class BatchNegTypeSampler:
                         if last == -1:
                             neg_candidates = self._objs  # fallback
                             last = len(neg_candidates) - 1
-                neg_triples.append((rel, subj, x))
+                neg_examples.append(x)
         else:
             last = len(neg_candidates)-1  # index of last good candidate
             for _ in range(self.neg_per_pos):
@@ -146,29 +146,19 @@ class BatchNegTypeSampler:
                         if last == -1:
                             neg_candidates = self._subjs # fallback
                             last = len(neg_candidates) - 1
-                neg_triples.append((rel, x, obj))
+                neg_examples.append(x)
 
-        return neg_triples
+        return neg_examples
 
     # @profile
-    def get_batch(self, position="both"):
+    def get_batch(self, position="obj"):
         if self.end_of_epoch():
             self.reset()
         pos_idx = self.todo_facts[0:self.pos_per_batch]
         self.count += 1
         self.todo_facts = self.todo_facts[self.pos_per_batch::]
-        if position == "both":
-            pos = [self.facts[pos_idx[i % self.pos_per_batch]] for i in range(self.pos_per_batch*2)]
-        else:
-            pos = [self.facts[i] for i in pos_idx]
-
-        if position == "both":
-            negs = self.__pool.map(
-                lambda i: self.__get_neg_examples(pos[i], "obj", self._rngs[i])
-                if i < self.pos_per_batch else
-                self.__get_neg_examples(pos[i], "subj", self._rngs[i]),
-                (i for i in range(self.pos_per_batch*2)))
-
+        pos = [self.facts[i] for i in pos_idx]
+        negs = None
         if position == "subj":
             negs = self.__pool.map(lambda i: self.__get_neg_examples(pos[i], "subj", self._rngs[i]),
                                    (i for i in range(self.pos_per_batch)))
@@ -177,9 +167,9 @@ class BatchNegTypeSampler:
             negs = self.__pool.map(lambda i: self.__get_neg_examples(pos[i], "obj", self._rngs[i]),
                                    (i for i in range(self.pos_per_batch)))
 
-        return pos, negs
+        return pos, negs, position == "subj"
 
-    def get_batch_async(self, position="both"):
+    def get_batch_async(self, position="obj"):
         return self.__pool.apply_async(self.get_batch, (position,))
 
     def get_epoch(self):

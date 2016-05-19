@@ -11,7 +11,7 @@ def rank_triple(sess, kb, model, triple, position="obj"):
         if obj not in compatible:
             return float('Inf')
 
-        neg_triples = [(rel, subj, e) for e in compatible if e != obj and
+        neg_examples = [e for e in compatible if e != obj and
                                                             not kb.contains_fact(True, "train", rel, subj, e) and
                                                             not kb.contains_fact(True, "test", rel, subj, e) and
                                                             not kb.contains_fact(True, "valid", rel, subj, e)]
@@ -19,13 +19,13 @@ def rank_triple(sess, kb, model, triple, position="obj"):
         compatible = kb.compatible_args_of(1, rel)
         if subj not in compatible:
             return float('Inf')
-        neg_triples = [(rel, e, obj) for e in compatible if e != subj and
+        neg_examples = [e for e in compatible if e != subj and
                                                           not kb.contains_fact(True, "train", rel, e, obj) and
                                                           not kb.contains_fact(True, "test", rel, e, obj) and
                                                           not kb.contains_fact(True, "valid", rel, e, obj)]
 
     if isinstance(model, list):
-        scores = [m[0].score_triples(sess, [triple] + neg_triples) for m in model]
+        scores = [m[0].score_triples_with_negs(sess, [triple], [neg_examples], position != "obj")[0] for m in model]
         score = scores[0]
         score *= model[0][1]
         for i, s in enumerate(scores):
@@ -34,7 +34,7 @@ def rank_triple(sess, kb, model, triple, position="obj"):
         ix = np.argsort(score)[::-1]
         rank = np.where(ix == 0)[0][0] + 1
     else:
-        scores = model.score_triples(sess, [triple] + neg_triples)
+        scores = model.score_triples_with_negs(sess, [triple], [neg_examples], position != "obj")[0]
         ix = np.argsort(scores)[::-1]
         rank = np.where(ix == 0)[0][0] + 1
 

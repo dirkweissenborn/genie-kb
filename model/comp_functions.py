@@ -3,12 +3,12 @@ import tensorflow as tf
 import model
 from tensorflow.models.rnn.rnn_cell import *
 from tf_util import get_tensors
-from model import my_rnn
+import my_rnn
 
 class CompositionUtil:
     """Holds information on decomposing relations, word vocabulary, etc."""
 
-    def __init__(self, kb, rel2seq, max_size):
+    def __init__(self, kb, rel2seq, max_size, include_args=False):
         self._kb = kb
         self._rel2seq = rel2seq
 
@@ -20,6 +20,8 @@ class CompositionUtil:
         l_count = {}
         total = 0
         must_contain = set()
+        if include_args:
+            must_contain = must_contain.union(self._kb.get_symbols(1)).union(self._kb.get_symbols(2))
         for (rel, _, _), _, typ in kb.get_all_facts():
             s = rel2seq(rel)
             for word in s:
@@ -47,14 +49,14 @@ class CompositionUtil:
                     values.append(-v)
 
             most_frequent = np.argsort(np.array(values))
-            for w in must_contain:
-                self._vocab[w] = len(self._vocab)
             max_size = min(max_size-len(must_contain)-1, len(most_frequent))
-            print("Total words: %d" % len(counts))
+            print("Total words: %d" % (len(counts) + len(must_contain)))
             print("Min word occurrence: %d" % values[most_frequent[max_size-1]])
             for i in range(max_size):
                 k = keys[most_frequent[i]]
                 self._vocab[k] = len(self._vocab)
+        for w in must_contain:
+            self._vocab[w] = len(self._vocab)
 
     def rel2word_ids(self, rel):
         return [self._vocab.get(w, 1) for w in self._rel2seq(rel)]  # use unknown word if w is not in vocab
@@ -187,8 +189,6 @@ class RNNCompF(CompositionFunction):
         assert cell.output_size == size, "cell size must equal size for RNNs"
         self._cell = cell
         CompositionFunction.__init__(self, size, batch_size, comp_util, learning_rate)
-        #self._state_tensors = [[o] + list(get_tensors([o], self._seq_inputs + [self._init_state], False))
-        #                       for o in self._bucket_outputs]
 
     def _comp_f(self):
         self._init_state = tf.get_variable("init_state", [self._cell.state_size])
@@ -288,8 +288,6 @@ class ConvCompF(CompositionFunction):
     def __init__(self, width, size, batch_size, comp_util, learning_rate=1e-2):
         self._width = width
         CompositionFunction.__init__(self, size, batch_size, comp_util, learning_rate)
-        #self._state_tensors = [[o] + list(get_tensors([o], self._seq_inputs + [self._subj, self._obj], False))
-        #                       for o in self._bucket_outputs]
 
     def _comp_f(self):
         conv_kernels = {j:tf.get_variable("W_%d" % j,[self._size, self._size]) for j in range(-self._width, self._width+1)}

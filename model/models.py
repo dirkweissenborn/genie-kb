@@ -15,12 +15,10 @@ import functools
 
 class AbstractKBScoringModel:
 
-    def __init__(self, kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2, l2_lambda=0.0,
-                 is_batch_training=False):
+    def __init__(self, kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2):
         self._kb = kb
         self._size = size
         self._batch_size = batch_size
-        self._is_batch_training = is_batch_training
         self._is_train = is_train
         self._init = model.default_init()
 
@@ -30,15 +28,12 @@ class AbstractKBScoringModel:
 
         with vs.variable_scope(self.name(), initializer=self._init):
             with tf.device("/cpu:0"):
-                if is_batch_training:
-                    self.opt = rprop.RPropOptimizer()  # tf.train.GradientDescentOptimizer(self.learning_rate)
-                else:
-                    self.opt = tf.train.AdamOptimizer(self.learning_rate, beta1=0.0)
+                self.opt = tf.train.AdamOptimizer(self.learning_rate, beta1=0.0)
             self._init_inputs()
             with vs.variable_scope("score", initializer=self._init):
                 self._scores = self._scoring_f()
 
-        if is_train or is_batch_training:
+        if is_train:
             assert batch_size % (num_neg+1) == 0, "Batch size must be multiple of num_neg+1 during training"
 
             num_pos = int(batch_size/(num_neg+1))
@@ -133,7 +128,7 @@ class AbstractKBScoringModel:
         :param mode: default(train)|loss|accumulate(used for batch training)
         :return:
         '''
-        assert self._is_train or self._is_batch_training, "model has to be created in training mode!"
+        assert self._is_train, "model has to be created in training mode!"
 
         assert len(pos_triples) + functools.reduce(lambda acc, x: acc+len(x), neg_triples, 0) == self._batch_size, \
             "batch_size and provided batch do not fit"
@@ -151,25 +146,8 @@ class AbstractKBScoringModel:
 
         if mode == "loss":
             return sess.run(self._loss, feed_dict=self._get_feed_dict())
-        elif mode == "accumulate":
-            assert self._is_batch_training, "accumulate only possible during batch training."
-            sess.run([self._accumulate_gradients, self._acc_loss], feed_dict=self._get_feed_dict())
-            return 0.0
         else:
             return sess.run([self._loss, self._update], feed_dict=self._get_feed_dict())[0]
-
-    def acc_l2_gradients(self, sess):
-        assert self._is_batch_training, "acc_l2_gradients only possible during batch training."
-        if hasattr(self, "_l2_accumulate_gradients"):
-            return sess.run([self._l2_accumulate_gradients, self._l2_acc_loss])
-
-    def reset_gradients_and_loss(self, sess):
-        assert self._is_batch_training, "reset_gradients_and_loss only possible during batch training."
-        return sess.run(self._reset)
-
-    def update(self, sess):
-        assert self._is_batch_training, "update only possible during batch training."
-        return sess.run([self._loss, self._update])[0]
 
 
 class DistMult(AbstractKBScoringModel):
@@ -214,8 +192,7 @@ class ModelO(AbstractKBScoringModel):
     def __init__(self, kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2, l2_lambda=0.0,
                  is_batch_training=False, which_sets=["train_text"]):
         self._which_sets = set(which_sets)
-        AbstractKBScoringModel.__init__(self, kb, size, batch_size, is_train, num_neg, learning_rate,
-                                        l2_lambda, is_batch_training)
+        AbstractKBScoringModel.__init__(self, kb, size, batch_size, is_train, num_neg, learning_rate)
 
     def _init_inputs(self):
         # create tuple to rel lookup
@@ -461,8 +438,7 @@ class CombinedModel(AbstractKBScoringModel):
                 self._models.append(model.create_model(kb, size, batch_size, False, num_neg, learning_rate,
                                                        l2_lambda, False, composition=composition, model=m))
 
-        AbstractKBScoringModel.__init__(self, kb, size, batch_size, is_train, num_neg, learning_rate,
-                                        l2_lambda, is_batch_training)
+        AbstractKBScoringModel.__init__(self, kb, size, batch_size, is_train, num_neg, learning_rate)
 
     def name(self):
         return self.__name
@@ -476,7 +452,7 @@ class CombinedModel(AbstractKBScoringModel):
 
     def _add_triple_to_input(self, t, j):
         for m in self._models:
-            m._add_triple_to_input(t, j)
+            m._add_triple_and_negs_to_input(t, j)
 
     def _finish_adding_triples(self, batch_size):
         for m in self._models:

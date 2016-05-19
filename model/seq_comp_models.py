@@ -1,14 +1,12 @@
-from model.models import *
+from model.comp_models import *
 from data.load_fb15k237 import split_relations
-from model import my_rnn
+import my_rnn
 
-class CompBiRNNModel(AbstractKBScoringModel):
-    def __init__(self, cell, kb, size, batch_size, is_train=True, num_neg=200, learning_rate=1e-2, l2_lambda=0.0,
-                 is_batch_training=False, which_sets=["train_text"]):
+class CompBiRNNModel(CompositionalKBScoringModel):
+    def __init__(self, cell, kb, size, batch_size, comp_f, is_train=True, num_neg=200, learning_rate=1e-2):
         assert cell.output_size == size//2, "cell size must be size / 2 for BiRNNs"
         self._cell = cell
-        AbstractKBScoringModel.__init__(self, kb, size, batch_size, is_train, num_neg, learning_rate,
-                                        l2_lambda, is_batch_training)
+        CompositionalKBScoringModel.__init__(self, kb, size, batch_size, comp_f, is_train, num_neg, learning_rate)
 
     def _scoring_f(self):
         inp = tf.reshape(tf.pack(self._seq_inputs), [self._max_length, -1, 1])
@@ -100,7 +98,7 @@ class CompBiRNNModel(AbstractKBScoringModel):
         (rel, subj, obj) = t
         l = [self._vocab.get(w, 1) for w in split_relations(rel)]  # use unknown word if w is not in vocab
         l.insert(0, self._vocab[subj])
-        l.append(self._vocab[obj])
+        #l.append(self._vocab[obj])
         self._input.append(l)
 
     def _finish_adding_triples(self, batch_size):

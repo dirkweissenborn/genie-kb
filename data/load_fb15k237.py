@@ -2,7 +2,7 @@ import os
 from kb import KB
 import numpy as np
 
-def load_fb15k(dir, with_text=True, split_text=False, max_vocab=-1):
+def load_fb15k(dir, with_text=True, split_text=False):
     train_file = os.path.join(dir, "train.txt")
     test_file = os.path.join(dir, "test.txt")
     text_file = os.path.join(dir, "text_emnlp.txt")
