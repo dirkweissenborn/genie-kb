@@ -118,7 +118,6 @@ with tf.Session(config=config) as sess:
     num_params = functools.reduce(lambda acc, x: acc + x.size, sess.run(tf.trainable_variables()), 0)
     print("Num params: %d" % num_params)
 
-
     print("Initialized model.")
     loss = 0.0
     step_time = 0.0
