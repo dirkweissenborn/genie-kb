@@ -125,6 +125,9 @@ with tf.Session(config=config) as sess:
     best_path = []
     checkpoint_path = os.path.join(train_dir, "model.ckpt")
 
+    previous_mrrs = list()
+    epoch = 0
+
     def validate():
         # Run evals on development set and print(their perplexity.)
         print("########## Validation ##############")
@@ -146,11 +149,17 @@ with tf.Session(config=config) as sess:
                 best_path[0] = m.saver.save(sess, checkpoint_path, global_step=m.global_step)
             else:
                 best_path.append(m.saver.save(sess, checkpoint_path, global_step=m.global_step))
+
+        if epoch >= 1 and mrr <= previous_mrrs[-1] - 1e-3:  # if mrr is worse by a specific margin
+            # if no significant improvement decay learningrate
+            print("Decaying learningrate.")
+            sess.run(m.learning_rate_decay_op)
+
         previous_mrrs.append(mrr)
 
         return mrr
 
-
+    validate()
     end_of_epoch = False
     def sample_next_batch():
         if FLAGS.kb_only or random.random() >= FLAGS.sample_text_prob:
@@ -161,9 +170,7 @@ with tf.Session(config=config) as sess:
     next_batch = sample_next_batch()
     loss = 0.0
     step_time = 0.0
-    previous_mrrs = list()
     epoch_mrr = 0.0
-    e = 0
 
     while FLAGS.max_iterations < 0 or i < FLAGS.max_iterations:
         i += 1
@@ -187,9 +194,9 @@ with tf.Session(config=config) as sess:
 
         if end_of_epoch:
             print("")
-            e += 1
+            epoch += 1
             mrr = validate()
-            print("Epoch %d done!" % e)
+            print("Epoch %d done!" % epoch)
             if mrr <= epoch_mrr - 1e-3:
                 print("Stop learning!")
                 break
@@ -209,11 +216,6 @@ with tf.Session(config=config) as sess:
             valid_loss = 0.0
 
             mrr = validate()
-
-            if e >= 1 and mrr <= previous_mrrs[-1] - 1e-3:  # if mrr is worse by a specific margin
-                # if no significant improvement decay learningrate
-                print("Decaying learningrate.")
-                sess.run(m.learning_rate_decay_op)
 
 
     best_valid_mrr = max(previous_mrrs)
