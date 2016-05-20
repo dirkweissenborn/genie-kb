@@ -34,6 +34,7 @@ tf.app.flags.DEFINE_integer("subsample_kb", -1, "num of entities in subsampled k
 tf.app.flags.DEFINE_integer("subsample_validation", 2000, "number of facts to evaluate during validation.")
 tf.app.flags.DEFINE_boolean("kb_only", False, "Only load and train on FB relations, ignoring text.")
 tf.app.flags.DEFINE_boolean("type_constraint", False, "Use type constraint during sampling.")
+tf.app.flags.DEFINE_boolean("support", False, "Use supporting evidence.")
 tf.app.flags.DEFINE_string("device", "/cpu:0", "Use this device.")
 tf.app.flags.DEFINE_string("save_dir", "save/" + time.strftime("%d%m%Y_%H%M%S", time.localtime()),
                            "Where to save model and its configuration, always last will be kept.")
@@ -103,7 +104,7 @@ with tf.Session(config=config) as sess:
     with tf.device(FLAGS.device):
         m = model.create_model(kb, FLAGS.size, batch_size, learning_rate=FLAGS.learning_rate,
                                model=FLAGS.model, observed_sets=FLAGS.observed_sets, composition=FLAGS.composition,
-                               max_vocab_size=FLAGS.max_vocab)
+                               max_vocab_size=FLAGS.max_vocab, support=FLAGS.support)
 
     print("Created model: " + m.name())
 
@@ -159,7 +160,7 @@ with tf.Session(config=config) as sess:
 
         return mrr
 
-    validate()
+    #validate()
     end_of_epoch = False
     def sample_next_batch():
         if FLAGS.kb_only or random.random() >= FLAGS.sample_text_prob:

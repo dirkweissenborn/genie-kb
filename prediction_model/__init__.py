@@ -11,7 +11,7 @@ def default_init():
 
 def create_model(kb, size, batch_size, is_train=True, learning_rate=1e-2,
                  model="DistMult", observed_sets=["train_text"], composition=None,
-                 comp_util=None, max_vocab_size=10000, support=True):
+                 comp_util=None, max_vocab_size=10000, support=False):
     '''
     Factory Method for all models
     :param model: any or combination of "ModelF", "DistMult", "ModelE", "ModelO", "ModelN"
