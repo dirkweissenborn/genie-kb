@@ -142,7 +142,9 @@ with tf.Session(config=config) as sess:
         if not best_path or mrr > max(previous_mrrs):
             if best_path:
                 os.remove(best_path[0])
-            best_path[0] = m.saver.save(sess, checkpoint_path, global_step=m.global_step)
+                best_path[0] = m.saver.save(sess, checkpoint_path, global_step=m.global_step)
+            else:
+                best_path.append(m.saver.save(sess, checkpoint_path, global_step=m.global_step))
         previous_mrrs.append(mrr)
 
         return mrr
