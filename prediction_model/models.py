@@ -104,11 +104,23 @@ class AbstractKBPredictionModel:
         self._feed_dict = {}
 
     def _change_batch_size(self, batch_size):
+        new_x_in = np.zeros([batch_size], dtype=np.int64)
+        new_x_in[:self._batch_size] = self._x_in
+        self._x_in = new_x_in
+
+        new_y_cands = np.zeros([batch_size, self._y_cands.shape[1]], dtype=np.int64)
+        new_y_cands[:self._batch_size] = self._y_cands
+        self._y_cands = new_y_cands
+
+        new_y_in = np.zeros([batch_size], dtype=np.int64)
+        new_y_in[:self._batch_size] = self._y_in
+        self._y_in = new_y_in
+
+        new_rel_in = np.zeros([batch_size, self._rel_in.shape[1]], dtype=np.int64)
+        new_rel_in[:self._batch_size] = self._rel_in
+        self._rel_in = new_rel_in
+
         self._batch_size = batch_size
-        self._x_in = np.zeros([self._batch_size], dtype=np.int64)
-        self._y_cands = np.zeros([self._batch_size, 2], dtype=np.int64)
-        self._y_in = np.zeros([self._batch_size], dtype=np.int64)
-        self._rel_in = np.zeros([self._batch_size], dtype=np.int64)
 
     def _start_adding_triples(self):
         pass
