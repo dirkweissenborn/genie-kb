@@ -10,6 +10,11 @@ class SupportingEvidenceModel(AbstractKBPredictionModel):
 
 
     def _init_inputs(self):
+        self._query_partition = tf.placeholder(tf.int64, [None])
+        self._support_size = tf.placeholder(tf.int64, [None])
+        self._query_part = []
+        self._support_sz = []
+
         self._feed_dict = self._model._feed_dict
         self._tuple_rels_lookup = dict()
         self._tuple_rels_lookup_inv = dict()
@@ -37,24 +42,30 @@ class SupportingEvidenceModel(AbstractKBPredictionModel):
 
     def _add_triple_and_negs_to_input(self, triple, neg_candidates, batch_idx, is_inv):
         self._model._add_triple_and_negs_to_input(triple, self._inner_batch_idx, is_inv)
+        self._query_part[self._inner_batch_idx] = 0
         self._inner_batch_idx += 1
         (rel, x, y) = triple
         # get supporting evidence
         r_i = self._kb.get_id(rel, 0)
         x_i = self._model.arg_vocab[y] if is_inv else self._model.arg_vocab[x]
-
-        for y in [x if is_inv else y] + neg_candidates:
-            y_i = self._model.arg_vocab[y]
+        support_size = 0
+        for y2 in [x if is_inv else y] + neg_candidates:
+            y_i = self._model.arg_vocab[y2]
             rels = self._tuple_rels_lookup.get((x_i, y_i), []) + self._tuple_rels_lookup_inv.get((x_i, y_i), [])
+
             if rels:
                 for i in range(len(rels)):
                     if rels[i] != r_i:
-                        self._model._add_triple_to_input((self._kb.get_key(r_i, 0), x, y), self._inner_batch_idx, is_inv)
+                        supporting_triple = (self._kb.get_key(r_i, 0), y2 if is_inv else x, x if is_inv else y2)
+                        self._model._add_triple_to_input(supporting_triple, self._inner_batch_idx, is_inv)
+                        self._query_part[self._inner_batch_idx] = 1
+                        support_size += 1
                         self._inner_batch_idx += 1
+        self._support_sz.append(support_size)
 
     def _add_triple_to_input(self, triple, batch_idx, is_inv):
         self._model._add_triple_to_input(triple, self._inner_batch_idx, is_inv)
-        self._inner_batch_idx +=1
+        self._inner_batch_idx += 1
         (rel, x, y) = triple
         # get supporting evidence
         r_i = self._kb.get_id(rel, 0)

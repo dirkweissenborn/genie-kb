@@ -120,13 +120,33 @@ with tf.Session(config=config) as sess:
     print("Num params: %d" % num_params)
 
     print("Initialized model.")
-    loss = 0.0
-    step_time = 0.0
-    previous_mrrs = list()
-    best_path = None
-    e = 0
 
+    best_path = []
     checkpoint_path = os.path.join(train_dir, "model.ckpt")
+
+    def validate():
+        # Run evals on development set and print(their perplexity.)
+        print("########## Validation ##############")
+        (mrr_a, _), (mrr_t, _), (mrr_nt, _) = eval_triples(sess, kb, m, validation, verbose=True)
+
+        if FLAGS.valid_mode == "a":
+            mrr = mrr_a
+        elif FLAGS.valid_mode == "t":
+            mrr = mrr_t
+        elif FLAGS.valid_mode == "nt":
+            mrr = mrr_nt
+        else:
+            raise ValueError("valid_mode flag must be either 'a','t' or 'nt'")
+        print("####################################")
+
+        if not best_path or mrr > max(previous_mrrs):
+            if best_path:
+                os.remove(best_path[0])
+            best_path[0] = m.saver.save(sess, checkpoint_path, global_step=m.global_step)
+        previous_mrrs.append(mrr)
+
+        return mrr
+
 
     end_of_epoch = False
     def sample_next_batch():
@@ -136,6 +156,11 @@ with tf.Session(config=config) as sess:
             return text_sampler.get_batch_async("obj" if random.random() > 0.5 else "subj")
 
     next_batch = sample_next_batch()
+    loss = 0.0
+    step_time = 0.0
+    previous_mrrs = list()
+    epoch_mrr = 0.0
+    e = 0
 
     while FLAGS.max_iterations < 0 or i < FLAGS.max_iterations:
         i += 1
@@ -160,7 +185,13 @@ with tf.Session(config=config) as sess:
         if end_of_epoch:
             print("")
             e += 1
+            mrr = validate()
             print("Epoch %d done!" % e)
+            if mrr <= epoch_mrr - 1e-3:
+                print("Stop learning!")
+                break
+            else:
+                epoch_mrr = mrr
 
         if i % FLAGS.ckpt_its == 0:
             loss /= FLAGS.ckpt_its
@@ -174,42 +205,22 @@ with tf.Session(config=config) as sess:
             step_time, loss = 0.0, 0.0
             valid_loss = 0.0
 
-            # Run evals on development set and print(their perplexity.)
-            print("########## Validation ##############")
-            (mrr_a, _), (mrr_t, _), (mrr_nt, _) = eval_triples(sess, kb, m, validation, verbose=True)
-
-            if FLAGS.valid_mode == "a":
-                mrr = mrr_a
-            elif FLAGS.valid_mode == "t":
-                mrr = mrr_t
-            elif FLAGS.valid_mode == "nt":
-                mrr = mrr_nt
-            else:
-                raise ValueError("valid_mode flag must be either 'a','t' or 'nt'")
+            mrr = validate()
 
             if e >= 1 and mrr <= previous_mrrs[-1] - 1e-3:  # if mrr is worse by a specific margin
                 # if no significant improvement decay learningrate
                 print("Decaying learningrate.")
                 sess.run(m.learning_rate_decay_op)
-                if len(previous_mrrs) >= 2 and previous_mrrs[-1] <= previous_mrrs[-2]+1e-3:
-                    print("Stop learning!")
-                    break
 
-            if not best_path or mrr > max(previous_mrrs):
-                if best_path:
-                    os.remove(best_path)
-                best_path = m.saver.save(sess, checkpoint_path, global_step=m.global_step)
-            previous_mrrs.append(mrr)
-
-            print("####################################")
 
     best_valid_mrr = max(previous_mrrs)
     print("Restore model to best on validation, with MRR: %.3f" % best_valid_mrr)
     m.saver.restore(sess, best_path)
     model_name = best_path.split("/")[-1]
-    shutil.copyfile(best_path, os.path.join(FLAGS.save_dir, model_name))
+    shutil.copyfile(best_path[0], os.path.join(FLAGS.save_dir, model_name))
     print("########## Test ##############")
-    (mrr, top10), (mrr_wt, top10_wt), (mrr_nt, top10_nt) = eval_triples(sess, kb, m, map(lambda x: x[0], kb.get_all_facts_of_arity(2, "test")), verbose=True)
+    (mrr, top10), (mrr_wt, top10_wt), (mrr_nt, top10_nt) = \
+        eval_triples(sess, kb, m, [x[0] for x in kb.get_all_facts_of_arity(2, "test")], verbose=True)
     with open(os.path.join(FLAGS.save_dir, "result.txt"), 'w') as f:
         f.write("best model: %s\n\nMRR: %.3f\nHits10: %.3f\n\n" % (model_name, mrr, top10))
         f.write("MRR wt: %.3f\nHits10 wt: %.3f\n\n" % (mrr_wt, top10_wt))

@@ -103,11 +103,20 @@ class AbstractKBPredictionModel:
 
         self._feed_dict = {}
 
+    def _change_batch_size(self, batch_size):
+        self._batch_size = batch_size
+        self._x_in = np.zeros([self._batch_size], dtype=np.int64)
+        self._y_cands = np.zeros([self._batch_size, 2], dtype=np.int64)
+        self._y_in = np.zeros([self._batch_size], dtype=np.int64)
+        self._rel_in = np.zeros([self._batch_size], dtype=np.int64)
+
     def _start_adding_triples(self):
         pass
 
     def _add_triple_and_negs_to_input(self, triple, neg_candidates, batch_idx, is_inv):
         (rel, x, y) = triple
+        if batch_idx > self._batch_size:
+            self._change_batch_size(max(self._batch_size*2, batch_idx))
         self._rel_in[batch_idx] = self._kb.get_id(rel, 0)
         self._x_in[batch_idx] = self.arg_vocab[y] if is_inv else self.arg_vocab[x]
         if len(neg_candidates)+1 != self._y_cands.shape[1]:
@@ -117,6 +126,8 @@ class AbstractKBPredictionModel:
 
     def _add_triple_to_input(self, triple, batch_idx, is_inv):
         (rel, x, y) = triple
+        if batch_idx > self._batch_size:
+            self._change_batch_size(max(self._batch_size*2, batch_idx))
         self._rel_in[batch_idx] = self._kb.get_id(rel, 0)
         self._x_in[batch_idx] = self.arg_vocab[y] if is_inv else self.arg_vocab[x]
         self._y_in[batch_idx] = self.arg_vocab[x] if is_inv else self.arg_vocab[y]
