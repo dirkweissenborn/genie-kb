@@ -221,8 +221,8 @@ with tf.Session(config=config) as sess:
 
     best_valid_mrr = max(previous_mrrs)
     print("Restore model to best on validation, with MRR: %.3f" % best_valid_mrr)
-    m.saver.restore(sess, best_path)
-    model_name = best_path.split("/")[-1]
+    m.saver.restore(sess, best_path[0])
+    model_name = best_path[0].split("/")[-1]
     shutil.copyfile(best_path[0], os.path.join(FLAGS.save_dir, model_name))
     print("########## Test ##############")
     (mrr, top10), (mrr_wt, top10_wt), (mrr_nt, top10_nt) = \
