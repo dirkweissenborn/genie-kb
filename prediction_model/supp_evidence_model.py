@@ -30,18 +30,13 @@ class SupportingEvidenceModel(AbstractKBPredictionModel):
         return queries + weighted_answers
 
     def _init_inputs(self):
-        self._rel_input = self._model._rel_input
-        self._x_input = self._model._x_input
-        self._is_inv = self._model._is_inv
         self.arg_vocab = self._model.arg_vocab
-
         self._query_partition = tf.placeholder(tf.int32, [None])
         self._support_ids = tf.placeholder(tf.int32, [None])
 
         query_idx = tf.where(tf.equal(self._query_partition, 0))
-        self._y_candidates = tf.squeeze(tf.gather(self._model._y_candidates, query_idx), [2])
-        self._y_input = tf.squeeze(tf.gather(self._model._y_input, query_idx), [1])
-        self._x_input = tf.squeeze(tf.gather(self._model._x_input, query_idx), [1])
+        self._y_candidates = tf.squeeze(tf.gather(self._model._y_candidates, query_idx), [1])
+        self._y_input = tf.reshape(tf.gather(self._model._y_input, query_idx), [-1])
 
         self._feed_dict = self._model._feed_dict
         self._tuple_rels_lookup = dict()
