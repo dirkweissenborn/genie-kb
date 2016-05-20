@@ -86,8 +86,8 @@ train_dir = os.path.join(FLAGS.save_dir, "train")
 i = 0
 
 validation = [x[0] for x in kb.get_all_facts_of_arity(2, "valid")]
-if len(validation) > 1000:
-    validation = random.sample(validation, 1000)
+#if len(validation) > 1000:
+#    validation = random.sample(validation, 1000)
 
 
 if FLAGS.ckpt_its <= 0:
