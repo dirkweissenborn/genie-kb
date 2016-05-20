@@ -31,6 +31,7 @@ tf.app.flags.DEFINE_integer("max_iterations", -1, "Maximum number of batches dur
 tf.app.flags.DEFINE_integer("ckpt_its", -1, "Number of iterations until running checkpoint. Negative means after every epoch.")
 tf.app.flags.DEFINE_integer("random_seed", 1234, "Seed for rng.")
 tf.app.flags.DEFINE_integer("subsample_kb", -1, "num of entities in subsampled kb. if <= 0 use whole kb")
+tf.app.flags.DEFINE_integer("subsample_validation", 2000, "number of facts to evaluate during validation.")
 tf.app.flags.DEFINE_boolean("kb_only", False, "Only load and train on FB relations, ignoring text.")
 tf.app.flags.DEFINE_boolean("type_constraint", False, "Use type constraint during sampling.")
 tf.app.flags.DEFINE_string("device", "/cpu:0", "Use this device.")
@@ -86,8 +87,8 @@ train_dir = os.path.join(FLAGS.save_dir, "train")
 i = 0
 
 validation = [x[0] for x in kb.get_all_facts_of_arity(2, "valid")]
-#if len(validation) > 1000:
-#    validation = random.sample(validation, 1000)
+if len(validation) > FLAGS.subsample_validation > -1:
+    validation = random.sample(validation, FLAGS.subsample_validation)
 
 
 if FLAGS.ckpt_its <= 0:
