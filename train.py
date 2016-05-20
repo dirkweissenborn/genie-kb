@@ -78,6 +78,7 @@ print("Loaded KB. %d kb triples. %d text_triples." % (num_kb, num_text))
 batch_size = FLAGS.pos_per_batch  # x2 because subject and object loss training
 
 fact_sampler = BatchNegTypeSampler(kb, FLAGS.pos_per_batch, which_set="train", neg_per_pos=FLAGS.num_neg, type_constraint=FLAGS.type_constraint)
+text_sampler = None
 if not FLAGS.kb_only:
     text_sampler = BatchNegTypeSampler(kb, FLAGS.pos_per_batch, which_set="train_text", neg_per_pos=FLAGS.num_neg, type_constraint=False)
 print("Created Samplers.")
@@ -171,7 +172,7 @@ with tf.Session(config=config) as sess:
         end_of_epoch = fact_sampler.end_of_epoch()
         if end_of_epoch:
             fact_sampler.reset()
-        if text_sampler.end_of_epoch():
+        if text_sampler is not None and text_sampler.end_of_epoch():
             text_sampler.reset()
         # already fetch next batch parallel to running model
         next_batch = sample_next_batch()

@@ -2,6 +2,7 @@ from data.load_fb15k237 import split_relations
 import tensorflow as tf
 from prediction_model.models import *
 from prediction_model.comp_models import *
+from prediction_model.supp_evidence_model import *
 
 
 def default_init():
@@ -10,13 +11,20 @@ def default_init():
 
 def create_model(kb, size, batch_size, is_train=True, learning_rate=1e-2,
                  model="DistMult", observed_sets=["train_text"], composition=None,
-                 comp_util=None, max_vocab_size=10000):
+                 comp_util=None, max_vocab_size=10000, support=True):
     '''
     Factory Method for all models
     :param model: any or combination of "ModelF", "DistMult", "ModelE", "ModelO", "ModelN"
     :param composition: "Tanh", "LSTM", "GRU", "BiTanh", "BiLSTM", "BiGRU", "BoW" or None
     :return: Model(s) of type "type"
     '''
+
+    if support:
+        print("Use supporting facts!")
+        m = create_model(kb, size, batch_size, is_train=False, learning_rate=learning_rate,
+                         model="DistMult", observed_sets=observed_sets, composition=composition,
+                         comp_util=comp_util, max_vocab_size=max_vocab_size, support=False)
+        return SupportingEvidenceModel(m, learning_rate, is_train, which_sets=observed_sets)
 
     if model == "ModelE":
         return ModelE(kb, size, batch_size, is_train, learning_rate)

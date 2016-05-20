@@ -19,34 +19,34 @@ class AbstractKBPredictionModel:
         self._is_train = is_train
         self._init = model.default_init()
 
-        self.learning_rate = tf.Variable(float(learning_rate), trainable=False, name="lr")
-        self.learning_rate_decay_op = self.learning_rate.assign(self.learning_rate * 0.9)
-        self.global_step = tf.Variable(0, trainable=False, name="step")
-
         with vs.variable_scope(self.name(), initializer=self._init):
-            self.opt = tf.train.AdamOptimizer(self.learning_rate, beta1=0.0)
             self._init_inputs()
             self.query = self._comp_f()
 
-            num_pos = batch_size
             self.candidates = tf.get_variable("E_candidate", [len(self.arg_vocab), self._size])
 
             lookup_individual = tf.nn.embedding_lookup(self.candidates, self._y_input)
             self._score = tf_util.batch_dot(lookup_individual, self.query)
 
             lookup = tf.nn.embedding_lookup(self.candidates, self._y_candidates)
-            self.query = tf.expand_dims(self.query, [2])
-            self._scores_with_negs = tf.squeeze(tf.batch_matmul(lookup, self.query), [2])
+            self._scores_with_negs = tf.squeeze(tf.batch_matmul(lookup, tf.expand_dims(self.query, [2])), [2])
 
         if is_train:
+            self.learning_rate = tf.Variable(float(learning_rate), trainable=False, name="lr")
+            self.learning_rate_decay_op = self.learning_rate.assign(self.learning_rate * 0.9)
+            self.global_step = tf.Variable(0, trainable=False, name="step")
+
+            self.opt = tf.train.AdamOptimizer(self.learning_rate, beta1=0.0)
+
+            current_batch_size = tf.gather(tf.shape(self._scores_with_negs), [0])
             labels = tf.constant([0], tf.int64)
-            labels = tf.tile(labels, tf.gather(tf.shape(self._scores_with_negs),[0]))
+            labels = tf.tile(labels, current_batch_size)
             loss = math_ops.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(self._scores_with_negs, labels))
 
             train_params = tf.trainable_variables()
             self.training_weight = tf.Variable(1.0, trainable=False, name="training_weight")
 
-            self._loss = loss / math_ops.cast(num_pos, dtypes.float32)
+            self._loss = loss / math_ops.cast(current_batch_size, dtypes.float32)
             in_params = self._input_params()
             if in_params is None:
                 self._grads = tf.gradients(self._loss, train_params, self.training_weight)
@@ -114,9 +114,9 @@ class AbstractKBPredictionModel:
         pass
 
     def _add_triple_and_negs_to_input(self, triple, neg_candidates, batch_idx, is_inv):
-        (rel, x, y) = triple
-        if batch_idx > self._batch_size:
+        if batch_idx >= self._batch_size:
             self._change_batch_size(max(self._batch_size*2, batch_idx))
+        (rel, x, y) = triple
         self._rel_in[batch_idx] = self._kb.get_id(rel, 0)
         self._x_in[batch_idx] = self.arg_vocab[y] if is_inv else self.arg_vocab[x]
         if len(neg_candidates)+1 != self._y_cands.shape[1]:
@@ -125,9 +125,9 @@ class AbstractKBPredictionModel:
                                      [self.arg_vocab[neg] for neg in neg_candidates]
 
     def _add_triple_to_input(self, triple, batch_idx, is_inv):
-        (rel, x, y) = triple
-        if batch_idx > self._batch_size:
+        if batch_idx >= self._batch_size:
             self._change_batch_size(max(self._batch_size*2, batch_idx))
+        (rel, x, y) = triple
         self._rel_in[batch_idx] = self._kb.get_id(rel, 0)
         self._x_in[batch_idx] = self.arg_vocab[y] if is_inv else self.arg_vocab[x]
         self._y_in[batch_idx] = self.arg_vocab[x] if is_inv else self.arg_vocab[y]

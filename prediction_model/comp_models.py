@@ -92,23 +92,26 @@ class CompositionalKBPredictionModel(AbstractKBPredictionModel):
         self._y_candidates = tf.placeholder(tf.int64, shape=[None, None], name="candidates")
         self._y_input = tf.placeholder(tf.int64, shape=[None], name="y")
         self._is_inv = tf.placeholder(tf.bool, shape=(), name="invert")
+        self._change_batch_size(self._batch_size)
+        self.arg_vocab = {}
+        for arg in self._kb.get_symbols(1):
+            self.arg_vocab[arg] = len(self.arg_vocab)
+        for arg in self._kb.get_symbols(2):
+            if arg not in self.arg_vocab:
+                self.arg_vocab[arg] = len(self.arg_vocab)
+        self._feed_dict = {}
+
+    def _change_batch_size(self, batch_size):
+        self._batch_size = batch_size
         self._x_in = np.zeros([self._batch_size], dtype=np.int64)
         self._y_cands = np.zeros([self._batch_size, 2], dtype=np.int64)
         self._y_in = np.zeros([self._batch_size], dtype=np.int64)
         self._rel_in = np.zeros([self._batch_size, self._comp_util.max_length], dtype=np.int64)
         self._rel_l = np.zeros([self._batch_size], dtype=np.int64)
 
-        self.arg_vocab = {}
-
-        for arg in self._kb.get_symbols(1):
-            self.arg_vocab[arg] = len(self.arg_vocab)
-        for arg in self._kb.get_symbols(2):
-            if arg not in self.arg_vocab:
-                self.arg_vocab[arg] = len(self.arg_vocab)
-
-        self._feed_dict = {}
-
     def _add_triple_and_negs_to_input(self, triple, neg_candidates, batch_idx, is_inv):
+        if batch_idx >= self._batch_size:
+            self._change_batch_size(max(self._batch_size*2, batch_idx))
         (rel, x, y) = triple
         w_ids = self._comp_util.rel2word_ids(rel)
         self._rel_in[batch_idx, :len(w_ids)] = w_ids
@@ -120,6 +123,8 @@ class CompositionalKBPredictionModel(AbstractKBPredictionModel):
                                      [self.arg_vocab[neg] for neg in neg_candidates]
 
     def _add_triple_to_input(self, triple, batch_idx, is_inv):
+        if batch_idx >= self._batch_size:
+            self._change_batch_size(max(self._batch_size*2, batch_idx))
         (rel, x, y) = triple
         w_ids = self._comp_util.rel2word_ids(rel)
         self._rel_in[batch_idx, :len(w_ids)] = w_ids
