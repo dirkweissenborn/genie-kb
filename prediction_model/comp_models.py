@@ -164,8 +164,8 @@ class CompDistMult(CompositionalKBPredictionModel):
         E_candidate = tf.get_variable("E_candidate", [len(self.arg_vocab), self._size])
         E_rel = tf.get_variable("E_rel", [len(self._comp_util.vocab), self._size])
 
-        r_input = tf.reverse_sequence(self._rel_input, self._rel_length, 1, 0) ## This is the only difference to fw
-        e_rel = tf.nn.embedding_lookup(E_rel, r_input)
+        #r_input = tf.reverse_sequence(self._rel_input, self._rel_length, 1, 0) ## This is the only difference to fw
+        e_rel = tf.nn.embedding_lookup(E_rel, self._rel_input)
         e_rel_inputs = [tf.reshape(e, [-1, self._size]) for e in tf.split(1, self._comp_util.max_length, e_rel)]
         e_rel = self._composition_function(e_rel_inputs, self._rel_length)
 

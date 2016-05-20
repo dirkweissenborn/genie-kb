@@ -84,8 +84,7 @@ class BatchNegTypeSampler:
         return self
 
     def next(self):
-        if self.count >= self.num_facts:
-            self.reset()
+        if self.count >= self.epoch_size:
             raise StopIteration
         return self.get_batch()
 
@@ -152,8 +151,6 @@ class BatchNegTypeSampler:
 
     # @profile
     def get_batch(self, position="obj"):
-        if self.end_of_epoch():
-            self.reset()
         pos_idx = self.todo_facts[0:self.pos_per_batch]
         self.count += 1
         self.todo_facts = self.todo_facts[self.pos_per_batch::]
@@ -173,4 +170,4 @@ class BatchNegTypeSampler:
         return self.__pool.apply_async(self.get_batch, (position,))
 
     def get_epoch(self):
-        return self.count / float(self.num_facts)
+        return self.count / self.epoch_size

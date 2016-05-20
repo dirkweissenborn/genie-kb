@@ -141,7 +141,10 @@ with tf.Session(config=config) as sess:
         start_time = time.time()
         pos, negs, is_inv = next_batch.get()
         end_of_epoch = fact_sampler.end_of_epoch()
-        current_ct = fact_sampler.count
+        if end_of_epoch:
+            fact_sampler.reset()
+        if text_sampler.end_of_epoch():
+            text_sampler.reset()
         # already fetch next batch parallel to running model
         next_batch = sample_next_batch()
 
@@ -153,7 +156,7 @@ with tf.Session(config=config) as sess:
                           loss / float((i-1) % FLAGS.ckpt_its + 1.0)))
         sys.stdout.flush()
 
-        if end_of_epoch and not fact_sampler.end_of_epoch():
+        if end_of_epoch:
             print("")
             e += 1
             print("Epoch %d done!" % e)
@@ -161,7 +164,7 @@ with tf.Session(config=config) as sess:
         if i % FLAGS.ckpt_its == 0:
             loss /= FLAGS.ckpt_its
             print("")
-            print("%d%% in epoch done." % (100*current_ct/fact_sampler.epoch_size))
+            print("%d%% in epoch done." % (100*fact_sampler.get_epoch()))
             # print(statistics for the previous epoch.)
             step_time /= FLAGS.ckpt_its
             print("global step %d learning rate %.4f, step-time %.3f, loss %.4f" % (m.global_step.eval(),
