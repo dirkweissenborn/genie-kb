@@ -26,17 +26,17 @@ class AbstractKBPredictionModel:
         with vs.variable_scope(self.name(), initializer=self._init):
             self.opt = tf.train.AdamOptimizer(self.learning_rate, beta1=0.0)
             self._init_inputs()
-            reps = self._comp_f()
+            self.query = self._comp_f()
 
             num_pos = batch_size
-            E_candidate = tf.get_variable("E_candidate", [len(self.arg_vocab), self._size])
+            self.candidates = tf.get_variable("E_candidate", [len(self.arg_vocab), self._size])
 
-            lookup_individual = tf.nn.embedding_lookup(E_candidate, self._y_input)
-            self._score = tf_util.batch_dot(lookup_individual, reps)
+            lookup_individual = tf.nn.embedding_lookup(self.candidates, self._y_input)
+            self._score = tf_util.batch_dot(lookup_individual, self.query)
 
-            lookup = tf.nn.embedding_lookup(E_candidate, self._y_candidates)
-            reps = tf.expand_dims(reps, [2])
-            self._scores_with_negs = tf.squeeze(tf.batch_matmul(lookup, reps), [2])
+            lookup = tf.nn.embedding_lookup(self.candidates, self._y_candidates)
+            self.query = tf.expand_dims(self.query, [2])
+            self._scores_with_negs = tf.squeeze(tf.batch_matmul(lookup, self.query), [2])
 
         if is_train:
             labels = tf.constant([0], tf.int64)
