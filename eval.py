@@ -12,17 +12,17 @@ def rank_triple(sess, kb, model, triple, position="obj"):
             return float('Inf')
 
         neg_examples = [e for e in compatible if e != obj and
-                                                            not kb.contains_fact(True, "train", rel, subj, e) and
-                                                            not kb.contains_fact(True, "test", rel, subj, e) and
-                                                            not kb.contains_fact(True, "valid", rel, subj, e)]
+                        not kb.contains_fact(True, "train", rel, subj, e) and
+                        not kb.contains_fact(True, "test", rel, subj, e) and
+                        not kb.contains_fact(True, "valid", rel, subj, e)]
     else:
         compatible = kb.compatible_args_of(1, rel)
         if subj not in compatible:
             return float('Inf')
         neg_examples = [e for e in compatible if e != subj and
-                                                          not kb.contains_fact(True, "train", rel, e, obj) and
-                                                          not kb.contains_fact(True, "test", rel, e, obj) and
-                                                          not kb.contains_fact(True, "valid", rel, e, obj)]
+                        not kb.contains_fact(True, "train", rel, e, obj) and
+                        not kb.contains_fact(True, "test", rel, e, obj) and
+                        not kb.contains_fact(True, "valid", rel, e, obj)]
 
     if isinstance(model, list):
         scores = [m[0].score_triples_with_negs(sess, [triple], [neg_examples], position != "obj")[0] for m in model]

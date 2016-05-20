@@ -84,7 +84,7 @@ class SupportingEvidenceModel(AbstractKBPredictionModel):
             if rels:
                 for i in range(len(rels)):
                     if rels[i] != r_i:
-                        supporting_triple = (self._kb.get_key(r_i, 0), y2 if is_inv else x, x if is_inv else y2)
+                        supporting_triple = (self._kb.get_key(rels[i], 0), y2 if is_inv else x, x if is_inv else y2)
                         self._model._add_triple_to_input(supporting_triple, self._inner_batch_idx, is_inv)
                         self._query_part.append(1)
                         support_size += 1

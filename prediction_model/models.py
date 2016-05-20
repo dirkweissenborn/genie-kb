@@ -170,7 +170,7 @@ class AbstractKBPredictionModel:
             batch_size = min(self._batch_size, len(triples)-i)
             self._start_adding_triples()
             batch_idx = 0
-            for pos, negs in zip(triples, neg_examples):
+            for pos, negs in zip(triples[i:i+batch_size], neg_examples[i:i+batch_size]):
                 self._add_triple_and_negs_to_input(pos, negs, batch_idx, is_inv)
                 batch_idx += 1
             self._finish_adding_triples(batch_size, is_inv)
