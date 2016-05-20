@@ -187,7 +187,7 @@ with tf.Session(config=config) as sess:
             else:
                 raise ValueError("valid_mode flag must be either 'a','t' or 'nt'")
 
-            if e >= 1 and mrr <= previous_mrrs[-1] + 1e-3:
+            if e >= 1 and mrr <= previous_mrrs[-1] - 1e-2:  # if mrr is worse by a specific margin
                 # if no significant improvement decay learningrate
                 print("Decaying learningrate.")
                 sess.run(m.learning_rate_decay_op)

@@ -20,7 +20,7 @@ class AbstractKBPredictionModel:
         self._init = model.default_init()
 
         self.learning_rate = tf.Variable(float(learning_rate), trainable=False, name="lr")
-        self.learning_rate_decay_op = self.learning_rate.assign(self.learning_rate * 0.5)
+        self.learning_rate_decay_op = self.learning_rate.assign(self.learning_rate * 0.9)
         self.global_step = tf.Variable(0, trainable=False, name="step")
 
         with vs.variable_scope(self.name(), initializer=self._init):
