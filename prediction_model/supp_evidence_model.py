@@ -39,9 +39,9 @@ class SupportingEvidenceModel(AbstractKBPredictionModel):
         self._support_ids = tf.placeholder(tf.int32, [None])
 
         query_idx = tf.where(tf.equal(self._query_partition, 0))
-        self._y_candidates = tf.squeeze(tf.gather(self._model._y_candidates, query_idx))
-        self._y_input = tf.squeeze(tf.gather(self._model._y_input, query_idx))
-        self._x_input = tf.squeeze(tf.gather(self._model._x_input, query_idx))
+        self._y_candidates = tf.squeeze(tf.gather(self._model._y_candidates, query_idx), [2])
+        self._y_input = tf.squeeze(tf.gather(self._model._y_input, query_idx), [1])
+        self._x_input = tf.squeeze(tf.gather(self._model._x_input, query_idx), [1])
 
         self._feed_dict = self._model._feed_dict
         self._tuple_rels_lookup = dict()
