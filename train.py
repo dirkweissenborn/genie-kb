@@ -110,7 +110,7 @@ with tf.Session(config=config) as sess:
 
     if os.path.exists(train_dir) and any("ckpt" in x for x in os.listdir(train_dir)):
         newest = max(map(lambda x: os.path.join(train_dir, x),
-                         filter(lambda x: ".ckpt" in x, os.listdir(train_dir))), key=os.path.getctime)
+                         filter(lambda x: x.endswith(".ckpt"), os.listdir(train_dir))), key=os.path.getctime)
         print("Loading from checkpoint " + newest)
         m.saver.restore(sess, newest)
     else:

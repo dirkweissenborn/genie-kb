@@ -31,33 +31,33 @@ class AbstractKBPredictionModel:
             lookup = tf.nn.embedding_lookup(self.candidates, self._y_candidates)
             self._scores_with_negs = tf.squeeze(tf.batch_matmul(lookup, tf.expand_dims(self.query, [2])), [2])
 
-        if is_train:
-            self.learning_rate = tf.Variable(float(learning_rate), trainable=False, name="lr")
-            self.learning_rate_decay_op = self.learning_rate.assign(self.learning_rate * 0.9)
-            self.global_step = tf.Variable(0, trainable=False, name="step")
+            if is_train:
+                self.learning_rate = tf.Variable(float(learning_rate), trainable=False, name="lr")
+                self.learning_rate_decay_op = self.learning_rate.assign(self.learning_rate * 0.9)
+                self.global_step = tf.Variable(0, trainable=False, name="step")
 
-            self.opt = tf.train.AdamOptimizer(self.learning_rate, beta1=0.0)
+                self.opt = tf.train.AdamOptimizer(self.learning_rate, beta1=0.0)
 
-            current_batch_size = tf.gather(tf.shape(self._scores_with_negs), [0])
-            labels = tf.constant([0], tf.int64)
-            labels = tf.tile(labels, current_batch_size)
-            loss = math_ops.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(self._scores_with_negs, labels))
+                current_batch_size = tf.gather(tf.shape(self._scores_with_negs), [0])
+                labels = tf.constant([0], tf.int64)
+                labels = tf.tile(labels, current_batch_size)
+                loss = math_ops.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(self._scores_with_negs, labels))
 
-            train_params = tf.trainable_variables()
-            self.training_weight = tf.Variable(1.0, trainable=False, name="training_weight")
+                train_params = tf.trainable_variables()
+                self.training_weight = tf.Variable(1.0, trainable=False, name="training_weight")
 
-            self._loss = loss / math_ops.cast(current_batch_size, dtypes.float32)
-            in_params = self._input_params()
-            if in_params is None:
-                self._grads = tf.gradients(self._loss, train_params, self.training_weight)
-            else:
-                self._grads = tf.gradients(self._loss, train_params + in_params, self.training_weight)
-                self._input_grads = self._grads[len(train_params):]
-            if len(train_params) > 0:
-                self._update = self.opt.apply_gradients(zip(self._grads[:len(train_params)], train_params),
+                self._loss = loss / math_ops.cast(current_batch_size, dtypes.float32)
+                in_params = self._input_params()
+                if in_params is None:
+                    self._grads = tf.gradients(self._loss, train_params, self.training_weight)
+                else:
+                    self._grads = tf.gradients(self._loss, train_params + in_params, self.training_weight)
+                    self._input_grads = self._grads[len(train_params):]
+                if len(train_params) > 0:
+                    self._update = self.opt.apply_gradients(zip(self._grads[:len(train_params)], train_params),
                                                         global_step=self.global_step)
-            else:
-                self._update = tf.assign_add(self.global_step, 1)
+                else:
+                    self._update = tf.assign_add(self.global_step, 1)
 
         self.saver = tf.train.Saver([v for v in tf.all_variables() if self.name() in v.name])
 

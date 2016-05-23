@@ -139,31 +139,37 @@ def eval_triples(sess, kb, model, triples, position="both", verbose=False):
 if __name__ == "__main__":
     import os
     from data.load_fb15k237 import load_fb15k, load_fb15k_type_constraints
-    from model.models import *
-
+    import prediction_model as model
+    import tensorflow as tf
     # data loading specifics
     tf.app.flags.DEFINE_string('fb15k_dir', None, 'data dir containing files of fb15k dataset')
     # model parameters
     tf.app.flags.DEFINE_integer('size', 10, 'num of models hidden dim')
-
+    tf.app.flags.DEFINE_integer('max_vocab', 10000, 'vocab size when using composition.')
+    tf.app.flags.DEFINE_string("model", None, "Type of model.")
+    tf.app.flags.DEFINE_string("composition", None, "Composition.")
+    tf.app.flags.DEFINE_string("observed_sets", "train_text", "Observed sets.")
+    tf.app.flags.DEFINE_boolean("support", False, "Use supporting evidence.")
     # Evaluation
     tf.app.flags.DEFINE_string("model_path", None, "Path to trained model.")
-    tf.app.flags.DEFINE_integer("batch_size", 20000, "Number of examples in each batch for training.")
     tf.app.flags.DEFINE_boolean("type_constraint", False, "Use type constraint during sampling.")
 
     FLAGS = tf.app.flags.FLAGS
-
-    kb = load_fb15k(FLAGS.fb15k_dir,  with_text=False)
+    FLAGS.observed_sets = FLAGS.observed_sets.split(",") 
+    kb = load_fb15k(FLAGS.fb15k_dir,  with_text=True)
     print("Loaded data.")
     if FLAGS.type_constraint:
         print("Loading type constraints!")
         load_fb15k_type_constraints(kb, os.path.join(FLAGS.fb15k_dir, "types"))
 
     with tf.Session() as sess:
-        model = DistMult(kb, FLAGS.size, FLAGS.batch_size, is_train=False)
-        model.saver.restore(sess, os.path.join(FLAGS.model_path))
+        m = model.create_model(kb, FLAGS.size, 1, learning_rate=0.1,
+                               model=FLAGS.model, observed_sets=FLAGS.observed_sets, composition=FLAGS.composition,
+                               max_vocab_size=FLAGS.max_vocab, support=FLAGS.support)
+        #model = CompDistMult(kb, FLAGS.size, FLAGS.batch_size, is_train=True)
+        m.saver.restore(sess, FLAGS.model_path)
         print("Loaded model.")
 
-        eval_triples(sess, kb, model, [x[0] for x in kb.get_all_facts_of_arity(2, "test")], verbose=True)
+        eval_triples(sess, kb, m, [x[0] for x in kb.get_all_facts_of_arity(2, "test")], verbose=True)
 
 
