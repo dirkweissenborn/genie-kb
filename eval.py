@@ -152,6 +152,7 @@ if __name__ == "__main__":
     tf.app.flags.DEFINE_boolean("support", False, "Use supporting evidence.")
     # Evaluation
     tf.app.flags.DEFINE_string("model_path", None, "Path to trained model.")
+    tf.app.flags.DEFINE_string("device", "/cpu:0", "Device to use.")
     tf.app.flags.DEFINE_boolean("type_constraint", False, "Use type constraint during sampling.")
 
     FLAGS = tf.app.flags.FLAGS
@@ -162,10 +163,13 @@ if __name__ == "__main__":
         print("Loading type constraints!")
         load_fb15k_type_constraints(kb, os.path.join(FLAGS.fb15k_dir, "types"))
 
-    with tf.Session() as sess:
-        m = model.create_model(kb, FLAGS.size, 1, learning_rate=0.1,
-                               model=FLAGS.model, observed_sets=FLAGS.observed_sets, composition=FLAGS.composition,
-                               max_vocab_size=FLAGS.max_vocab, support=FLAGS.support)
+    config = tf.ConfigProto(allow_soft_placement=True)
+    config.gpu_options.allow_growth = True
+    with tf.Session(config) as sess:
+        with tf.device(FLAGS.device):
+            m = model.create_model(kb, FLAGS.size, 1, learning_rate=0.1,
+                                   model=FLAGS.model, observed_sets=FLAGS.observed_sets, composition=FLAGS.composition,
+                                   max_vocab_size=FLAGS.max_vocab, support=FLAGS.support)
         #model = CompDistMult(kb, FLAGS.size, FLAGS.batch_size, is_train=True)
         m.saver.restore(sess, FLAGS.model_path)
         print("Loaded model.")
