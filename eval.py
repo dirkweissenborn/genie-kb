@@ -165,7 +165,7 @@ if __name__ == "__main__":
 
     config = tf.ConfigProto(allow_soft_placement=True)
     config.gpu_options.allow_growth = True
-    with tf.Session(config) as sess:
+    with tf.Session(config=config) as sess:
         with tf.device(FLAGS.device):
             m = model.create_model(kb, FLAGS.size, 1, learning_rate=0.1,
                                    model=FLAGS.model, observed_sets=FLAGS.observed_sets, composition=FLAGS.composition,
