@@ -55,11 +55,11 @@ class AbstractKBPredictionModel:
                     self._input_grads = self._grads[len(train_params):]
                 if len(train_params) > 0:
                     self._update = self.opt.apply_gradients(zip(self._grads[:len(train_params)], train_params),
-                                                        global_step=self.global_step)
+                                                            global_step=self.global_step)
                 else:
                     self._update = tf.assign_add(self.global_step, 1)
 
-        self.saver = tf.train.Saver(tf.all_variables())
+        self.saver = tf.train.Saver(tf.all_variables(), max_to_keep=1)
 
     def _input_params(self):
         return None
@@ -95,9 +95,9 @@ class AbstractKBPredictionModel:
 
         self.arg_vocab = {}
 
-        for arg in self._kb.get_symbols(1):
+        for arg in self._kb.get_vocab(1):
             self.arg_vocab[arg] = len(self.arg_vocab)
-        for arg in self._kb.get_symbols(2):
+        for arg in self._kb.get_vocab(2):
             if arg not in self.arg_vocab:
                 self.arg_vocab[arg] = len(self.arg_vocab)
 
@@ -157,6 +157,7 @@ class AbstractKBPredictionModel:
             self._feed_dict[self._y_input] = self._y_in
         self._feed_dict[self._is_inv] = is_inv
 
+
     def _get_feed_dict(self):
         return self._feed_dict
 
@@ -172,6 +173,8 @@ class AbstractKBPredictionModel:
 
             result[i:i+batch_size] = sess.run(self._score, feed_dict=self._get_feed_dict())
             i += batch_size
+
+        print(result)
 
         return result
 
@@ -201,9 +204,6 @@ class AbstractKBPredictionModel:
         :return:
         '''
         assert self._is_train, "model has to be created in training mode!"
-
-        assert len(pos_triples) == self._batch_size, \
-            "batch_size and provided batch do not fit"
 
         batch_idx = 0
         self._start_adding_triples()

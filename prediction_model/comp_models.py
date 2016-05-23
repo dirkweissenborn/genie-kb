@@ -12,11 +12,14 @@ class CompositionUtil:
         # Creation of vocabulary
         self._vocab = {"#PADDING#": 0}
         self._vocab["#UNK#"] = 1
-        counts = {}
         self.max_length = 0
         l_count = {}
         total = 0
         must_contain = set()
+
+        vocab = {}
+        keys = []
+        values = []
         if include_args:
             must_contain = must_contain.union(self._kb.get_symbols(1)).union(self._kb.get_symbols(2))
         for (rel, _, _), _, typ in kb.get_all_facts():
@@ -24,10 +27,12 @@ class CompositionUtil:
             for word in s:
                 if typ == "train":  # as opposed to train_text for example
                     must_contain.add(word)
-                elif word not in counts:
-                    counts[word] = 1
+                elif word not in vocab:
+                    vocab[word] = len(vocab)
+                    keys.append(word)
+                    values.append(-1)
                 else:
-                    counts[word] += 1
+                    values[vocab[word]] -= 1
             l = len(s)
             self.max_length = max(self.max_length, l)
             if l not in l_count:
@@ -36,20 +41,15 @@ class CompositionUtil:
             total += 1
 
         if max_size <= 0:
-            for k in counts:
+            for k in keys:
                 self._vocab[k] = len(self._vocab)
         else:
             keys, values = list(), list()
-            for k, v in counts.items():
-                if k not in must_contain:
-                    keys.append(k)
-                    values.append(-v)
-
             if len(values) > 0:
                 most_frequent = np.argsort(np.array(values))
                 max_size = min(max_size-len(must_contain)-1, len(most_frequent))
-                print("Total words: %d" % (len(counts) + len(must_contain)))
-                print("Min word occurrence: %d" % values[most_frequent[max_size-1]])
+                print("Total words: %d" % (len(keys)))
+                print("Min word occurrence: %d" % -values[most_frequent[max_size-1]])
                 for i in range(max_size):
                     k = keys[most_frequent[i]]
                     self._vocab[k] = len(self._vocab)

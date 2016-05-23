@@ -1,7 +1,6 @@
-import random
 import os
 import time
-from data.load_fb15k237 import load_fb15k, load_fb15k_type_constraints, split_relations
+from data.load_fb15k237 import load_fb15k, load_fb15k_type_constraints
 from sampler import *
 from eval import eval_triples
 import prediction_model as model
@@ -11,7 +10,7 @@ from kb import subsample_kb
 import shutil
 import json
 import functools
-
+import numpy as np
 
 # data loading specifics
 tf.app.flags.DEFINE_string('fb15k_dir', None, 'data dir containing extracted files of fb15k dataset.')
@@ -76,7 +75,7 @@ for f in kb.get_all_facts():
         num_text += 1
 
 print("Loaded KB. %d kb triples. %d text_triples." % (num_kb, num_text))
-batch_size = FLAGS.pos_per_batch  # x2 because subject and object loss training
+batch_size = FLAGS.pos_per_batch
 
 fact_sampler = BatchNegTypeSampler(kb, FLAGS.pos_per_batch, which_set="train", neg_per_pos=FLAGS.num_neg, type_constraint=FLAGS.type_constraint)
 text_sampler = None
@@ -108,10 +107,18 @@ with tf.Session(config=config) as sess:
 
     print("Created model: " + m.name())
 
+    best_path = []
+    checkpoint_path = os.path.join(train_dir, "model.ckpt")
+
+    previous_mrrs = list()
+    epoch = 0
+
     if os.path.exists(train_dir) and any("ckpt" in x for x in os.listdir(train_dir)):
         newest = max(map(lambda x: os.path.join(train_dir, x),
-                         filter(lambda x: x.endswith(".ckpt"), os.listdir(train_dir))), key=os.path.getctime)
+                         filter(lambda x: not x.endswith(".meta") and "ckpt" in x, os.listdir(train_dir))),
+                     key=os.path.getctime)
         print("Loading from checkpoint " + newest)
+        best_path.append(newest)
         m.saver.restore(sess, newest)
     else:
         if not os.path.exists(train_dir):
@@ -122,12 +129,6 @@ with tf.Session(config=config) as sess:
     print("Num params: %d" % num_params)
 
     print("Initialized model.")
-
-    best_path = []
-    checkpoint_path = os.path.join(train_dir, "model.ckpt")
-
-    previous_mrrs = list()
-    epoch = 0
 
     def validate():
         # Run evals on development set and print(their perplexity.)
@@ -146,10 +147,9 @@ with tf.Session(config=config) as sess:
 
         if not best_path or mrr > max(previous_mrrs):
             if best_path:
-                os.remove(best_path[0])
-                best_path[0] = m.saver.save(sess, checkpoint_path, global_step=m.global_step)
+                best_path[0] = m.saver.save(sess, checkpoint_path, global_step=m.global_step, write_meta_graph=False)
             else:
-                best_path.append(m.saver.save(sess, checkpoint_path, global_step=m.global_step))
+                best_path.append(m.saver.save(sess, checkpoint_path, global_step=m.global_step, write_meta_graph=False))
 
         if epoch >= 1 and mrr <= previous_mrrs[-1] - 1e-3:  # if mrr is worse by a specific margin
             # if no significant improvement decay learningrate
@@ -218,12 +218,12 @@ with tf.Session(config=config) as sess:
 
             mrr = validate()
 
-
-    best_valid_mrr = max(previous_mrrs)
+    best_valid_mrr = max(previous_mrrs) if previous_mrrs else 0.0
     print("Restore model to best on validation, with MRR: %.3f" % best_valid_mrr)
     m.saver.restore(sess, best_path[0])
     model_name = best_path[0].split("/")[-1]
     shutil.copyfile(best_path[0], os.path.join(FLAGS.save_dir, model_name))
+
     print("########## Test ##############")
     (mrr, top10), (mrr_wt, top10_wt), (mrr_nt, top10_nt) = \
         eval_triples(sess, kb, m, [x[0] for x in kb.get_all_facts_of_arity(2, "test")], verbose=True)

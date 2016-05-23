@@ -1,7 +1,5 @@
 import numpy as np
 import sys
-import math
-
 
 def rank_triple(sess, kb, model, triple, position="obj"):
     (rel, subj, obj) = triple
@@ -154,23 +152,28 @@ if __name__ == "__main__":
     tf.app.flags.DEFINE_string("model_path", None, "Path to trained model.")
     tf.app.flags.DEFINE_string("device", "/cpu:0", "Device to use.")
     tf.app.flags.DEFINE_boolean("type_constraint", False, "Use type constraint during sampling.")
+    tf.app.flags.DEFINE_boolean("kb_only", False, "Use only kb relations.")
 
     FLAGS = tf.app.flags.FLAGS
-    FLAGS.observed_sets = FLAGS.observed_sets.split(",") 
-    kb = load_fb15k(FLAGS.fb15k_dir,  with_text=True)
-    print("Loaded data.")
+    FLAGS.observed_sets = FLAGS.observed_sets.split(",")
+    print("Loading data...")
+    kb = load_fb15k(FLAGS.fb15k_dir, with_text=not FLAGS.kb_only)
     if FLAGS.type_constraint:
-        print("Loading type constraints!")
+        print("Loading type constraints...")
         load_fb15k_type_constraints(kb, os.path.join(FLAGS.fb15k_dir, "types"))
 
     config = tf.ConfigProto(allow_soft_placement=True)
     config.gpu_options.allow_growth = True
     with tf.Session(config=config) as sess:
         with tf.device(FLAGS.device):
-            m = model.create_model(kb, FLAGS.size, 1, learning_rate=0.1,
-                                   model=FLAGS.model, observed_sets=FLAGS.observed_sets, composition=FLAGS.composition,
-                                   max_vocab_size=FLAGS.max_vocab, support=FLAGS.support)
-        #model = CompDistMult(kb, FLAGS.size, FLAGS.batch_size, is_train=True)
+            print("Creating model...")
+            m = model.create_model(kb, FLAGS.size, 1, is_train=False, learning_rate=0.1,
+                                   model=FLAGS.model, observed_sets=FLAGS.observed_sets,
+                                   composition=FLAGS.composition,
+                                   max_vocab_size=FLAGS.max_vocab,
+                                   support=FLAGS.support)
+
+        print("Loading model...")
         m.saver.restore(sess, FLAGS.model_path)
         print("Loaded model.")
 
