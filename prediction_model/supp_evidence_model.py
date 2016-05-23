@@ -19,12 +19,12 @@ class SupportingEvidenceModel(AbstractKBPredictionModel):
         e_scores = tf.exp(evidence_scores)
         norm = tf.unsorted_segment_sum(e_scores, self._support_ids, num_queries) + 0.00001 # for zero norms
 
-        evidence_weights = tf.tile(tf.reshape(e_scores, [-1, 1]), [1,self._size])
+        self.evidence_weights = tf.tile(tf.reshape(e_scores, [-1, 1]), [1,self._size])
         norm = tf.tile(tf.reshape(norm, [-1, 1]), [1, self._size])
 
         _, support_answers = tf.dynamic_partition(self._model._y_input, self._query_partition, 2)
         support_answers = tf.nn.embedding_lookup(self._model.candidates, support_answers)
-        weighted_answers = evidence_weights * support_answers
+        weighted_answers = self.evidence_weights * support_answers
         weighted_answers = tf.unsorted_segment_sum(weighted_answers, self._support_ids, num_queries) / norm
 
         return queries + weighted_answers
@@ -67,6 +67,7 @@ class SupportingEvidenceModel(AbstractKBPredictionModel):
         self._inner_batch_idx = 0
         self._query_part = []
         self._support = []
+        self.supporting_triples = []
 
     def _add_triple_and_negs_to_input(self, triple, neg_candidates, batch_idx, is_inv):
         self._model._add_triple_and_negs_to_input(triple, neg_candidates, self._inner_batch_idx, is_inv)
@@ -84,6 +85,7 @@ class SupportingEvidenceModel(AbstractKBPredictionModel):
                 for i in range(len(rels)):
                     if rels[i] != r_i:
                         supporting_triple = (self._kb.get_key(rels[i], 0), y2 if is_inv else x, x if is_inv else y2)
+                        self.supporting_triples.append(supporting_triple)
                         self._model._add_triple_to_input(supporting_triple, self._inner_batch_idx, is_inv)
                         self._query_part.append(1)
                         self._support.append(batch_idx)

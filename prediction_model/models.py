@@ -59,7 +59,7 @@ class AbstractKBPredictionModel:
                 else:
                     self._update = tf.assign_add(self.global_step, 1)
 
-        self.saver = tf.train.Saver([v for v in tf.all_variables() if self.name() in v.name])
+        self.saver = tf.train.Saver(tf.all_variables())
 
     def _input_params(self):
         return None
