@@ -177,6 +177,6 @@ if __name__ == "__main__":
         m.saver.restore(sess, FLAGS.model_path)
         print("Loaded model.")
 
-        eval_triples(sess, kb, m, [x[0] for x in kb.get_all_facts_of_arity(2, "valid")], verbose=True)
+        eval_triples(sess, kb, m, [x[0] for x in kb.get_all_facts_of_arity(2, "test")], verbose=True)
 
 
