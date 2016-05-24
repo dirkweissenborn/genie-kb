@@ -3,41 +3,83 @@ from prediction_model.models import *
 
 class SupportingEvidenceModel(AbstractKBPredictionModel):
 
-    def __init__(self, model, learning_rate=1e-2, is_train=True, which_sets=None):
+    def __init__(self, model, learning_rate=1e-2, is_train=True, which_sets=None, num_consecutive_queries=1):
         self._model = model
         self._which_sets = which_sets
+        self._num_consecutive_queries = num_consecutive_queries
         AbstractKBPredictionModel.__init__(self, model._kb, model._size, model._batch_size, is_train, learning_rate)
 
     def _comp_f(self):
-        with vs.variable_scope("supporting_evidence"):
-            queries = self._model.query
-            queries, supp_queries = tf.dynamic_partition(queries, self._query_partition, 2)
-            num_queries = tf.shape(queries)[0]
-            aligned_queries = tf.gather(queries, self._support_ids)  # align queries with respective supp_queries
-            self.evidence_weights = tf_util.batch_dot(aligned_queries, supp_queries)
-            #TODO maybe stabilize
-            e_scores = tf.exp(self.evidence_weights -
-                              tf.tile(tf.reduce_max(self.evidence_weights, [0], keep_dims=True),
-                                      tf.shape(self.evidence_weights)))
-            norm = tf.unsorted_segment_sum(e_scores, self._support_ids, num_queries) + 0.00001 # for zero norms
+        with vs.variable_scope("supporting"):
+            query = self._model.query
+            query, supp_queries = tf.dynamic_partition(query, self._query_partition, 2)
+            num_queries = tf.shape(query)[0]
 
-            e_weights = tf.tile(tf.reshape(e_scores, [-1, 1]), [1, self._size])
-            norm = tf.tile(tf.reshape(norm, [-1, 1]), [1, self._size])
+            self.evidence_weights = []
+            answer = query
+            current_query = query
+            for i in range(self._num_consecutive_queries):
+                with vs.variable_scope("evidence_%d"%i):
+                    aligned_queries = tf.gather(current_query, self._support_ids)  # align query with respective supp_queries
+                    e_scores = tf_util.batch_dot(aligned_queries, supp_queries)
+                    self.evidence_weights.append(e_scores)
+                    e_scores = tf.exp(e_scores -
+                                      tf.tile(tf.reduce_max(e_scores, [0], keep_dims=True),
+                                              tf.shape(e_scores)))
+                    norm = tf.unsorted_segment_sum(e_scores, self._support_ids, num_queries) + 0.00001 # for zero norms
 
-            _, supp_answers = tf.dynamic_partition(self._model._y_input, self._query_partition, 2)
-            supp_answers = tf.nn.embedding_lookup(self._model.candidates, supp_answers)
-            weighted_answers = tf.unsorted_segment_sum(e_weights * supp_answers, self._support_ids, num_queries) / norm
-            weighted_queries = tf.unsorted_segment_sum(e_weights * supp_queries, self._support_ids, num_queries) / norm
+                    e_weights = tf.tile(tf.reshape(e_scores, [-1, 1]), [1, self._size])
+                    norm = tf.tile(tf.reshape(norm, [-1, 1]), [1, self._size])
 
-            with vs.variable_scope("gate"):
-                vs.get_variable_scope()._reuse = \
-                    any(vs.get_variable_scope().name in v.name for v in tf.trainable_variables())
-                gate = tf.contrib.layers.fully_connected(tf.concat(1, [queries, weighted_queries]), self._size,
-                                                         activation_fn=tf.sigmoid, weight_init=None,
-                                                         bias_init=tf.constant_initializer(1.0))
+                    _, supp_answers = tf.dynamic_partition(self._model._y_input, self._query_partition, 2)
+                    supp_answers = tf.nn.embedding_lookup(self._model.candidates, supp_answers)
+                    weighted_answers = tf.unsorted_segment_sum(e_weights * supp_answers, self._support_ids, num_queries) / norm
+                    weighted_queries = tf.unsorted_segment_sum(e_weights * supp_queries, self._support_ids, num_queries) / norm
+
+                    answer_weight = tf.contrib.layers.fully_connected(weighted_queries * query, 1,
+                                                                      activation_fn=tf.sigmoid, weight_init=None,
+                                                                      bias_init=tf.constant_initializer(-1))
+                    answer_weight = tf.tile(answer_weight, [1, self._size])
+
+                    answer = weighted_answers * answer_weight + (1-answer_weight) * answer
+
+                    if i < self._num_consecutive_queries - 1:
+                        vs.get_variable_scope()._reuse = \
+                            any(vs.get_variable_scope().name in v.name for v in tf.trainable_variables())
+
+                        c = tf.contrib.layers.fully_connected(tf.concat(1, [current_query, weighted_answers]), self._size,
+                                                              activation_fn=tf.tanh, weight_init=None, bias_init=None)
+
+                        gate = tf.contrib.layers.fully_connected(tf.concat(1, [current_query, weighted_queries]),
+                                                                 self._size,
+                                                                 activation_fn=tf.sigmoid, weight_init=None,
+                                                                 bias_init=tf.constant_initializer(0))
+                        current_query = gate * current_query + (1-gate) * c
+
+            #with vs.variable_scope("selection"):
+            #    vs.get_variable_scope()._reuse = \
+            #        any(vs.get_variable_scope().name in v.name for v in tf.trainable_variables())
+
+            #    q_inter = tf.contrib.layers.fully_connected(query, self._size,
+            #                                                activation_fn=None, weight_init=None, bias_init=None)
+
+            #    with vs.variable_scope("to_select"):
+            #        W = tf.get_variable("W_answer_interaction", [self._size, self._size])
+            #        inter = []
+            #        for other_query in queries:
+            #            inter.append(tf.nn.relu(tf.matmul(other_query, W) + q_inter))
+
+             #   inter = tf.reshape(tf.concat(1, inter), [-1, self._size])
+
+            #    scores = tf.contrib.layers.fully_connected(inter, 1)
+            #    answer_weights = tf.nn.softmax(tf.reshape(scores, [-1, 1+self._num_consecutive_queries]))
+            #    answer_weights = tf.tile(tf.expand_dims(answer_weights, [2]), [1, 1, self._size])
+
+            #    answer_candidates = tf.reshape(tf.concat(1, answers), [-1, 1+self._num_consecutive_queries, self._size])
+            #    answer = tf.reduce_sum(answer_weights * answer_candidates, [1])
 
         tf.get_variable_scope().reuse_variables()
-        return gate * queries + (1-gate) * weighted_answers
+        return answer
 
     def _init_inputs(self):
         self.arg_vocab = self._model.arg_vocab
