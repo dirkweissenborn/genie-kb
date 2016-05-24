@@ -1,6 +1,7 @@
 from prediction_model.models import *
 from data import load_fb15k237
 import my_rnn
+import collections
 
 class CompositionUtil:
     """Holds information on decomposing relations, word vocabulary, etc."""
@@ -15,18 +16,21 @@ class CompositionUtil:
         self.max_length = 0
         l_count = {}
         total = 0
-        must_contain = set()
+        must_contain = collections.OrderedDict()
 
         vocab = {}
         keys = []
         values = []
         if include_args:
-            must_contain = must_contain.union(self._kb.get_symbols(1)).union(self._kb.get_symbols(2))
+            for x in self._kb.get_vocab(1):
+                must_contain[x] = True
+            for x in self._kb.get_vocab(2):
+                must_contain[x] = True
         for (rel, _, _), _, typ in kb.get_all_facts():
             s = rel2seq(rel)
             for word in s:
                 if typ == "train":  # as opposed to train_text for example
-                    must_contain.add(word)
+                    must_contain[word] = True
                 elif word not in vocab:
                     vocab[word] = len(vocab)
                     keys.append(word)
@@ -82,6 +86,13 @@ class CompositionalKBPredictionModel(AbstractKBPredictionModel):
             cell = BasicLSTMCell(self._size)
             out = my_rnn.rnn(cell, inputs, sequence_length=length, initial_state=init_state, dtype=tf.float32)[1]
             return tf.slice(out, [0, cell.state_size-cell.output_size],[-1,-1])
+        elif self._composition == "BiGRU":
+            cell = GRUCell(self._size // 2)
+            fw_out = my_rnn.rnn(cell, inputs, sequence_length=length, initial_state=init_state, dtype=tf.float32)[1]
+            rev_inputs = tf.reverse_sequence(tf.pack(inputs), length, 0, 1)
+            rev_inputs = tf.split(0, len(inputs), rev_inputs)
+            bw_out = my_rnn.rnn(cell, rev_inputs, sequence_length=length, initial_state=init_state, dtype=tf.float32)[1]
+            return tf.concat(1, [fw_out, bw_out])
         else:
             raise NotImplementedError("Other compositions not implemented yet.")
 
@@ -101,9 +112,9 @@ class CompositionalKBPredictionModel(AbstractKBPredictionModel):
         self._rel_l = np.zeros([self._batch_size], dtype=np.int64)
 
         self.arg_vocab = {}
-        for arg in self._kb.get_symbols(1):
+        for arg in self._kb.get_vocab(1):
             self.arg_vocab[arg] = len(self.arg_vocab)
-        for arg in self._kb.get_symbols(2):
+        for arg in self._kb.get_vocab(2):
             if arg not in self.arg_vocab:
                 self.arg_vocab[arg] = len(self.arg_vocab)
         self._feed_dict = {}

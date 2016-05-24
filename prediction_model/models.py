@@ -174,8 +174,6 @@ class AbstractKBPredictionModel:
             result[i:i+batch_size] = sess.run(self._score, feed_dict=self._get_feed_dict())
             i += batch_size
 
-        print(result)
-
         return result
 
     def score_triples_with_negs(self, sess, triples, neg_examples, is_inv):

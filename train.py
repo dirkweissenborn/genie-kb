@@ -45,6 +45,7 @@ tf.app.flags.DEFINE_string("valid_mode", "a", "[a,t,nt] are possible. a- validat
                                               "t- validate only on triples with text mentions, "
                                               "nt- validate only on triples without text mentions")
 tf.app.flags.DEFINE_string("composition", None, "'LSTM', 'GRU', 'RNN', 'BoW', 'BiLSTM', 'BiGRU', 'BiRNN', 'Conv'")
+tf.app.flags.DEFINE_string("init_model_path", None, "Path to model to initialize from.")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -124,6 +125,9 @@ with tf.Session(config=config) as sess:
         if not os.path.exists(train_dir):
             os.makedirs(train_dir)
         sess.run(tf.initialize_all_variables())
+        if FLAGS.support and FLAGS.init_model_path:
+            print("Initializing inner model without supporting evidence with %s ..." % FLAGS.init_model_path)
+            m._model.saver.restore(sess, FLAGS.init_model_path)
 
     num_params = functools.reduce(lambda acc, x: acc + x.size, sess.run(tf.trainable_variables()), 0)
     print("Num params: %d" % num_params)

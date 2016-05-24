@@ -22,7 +22,7 @@ def create_model(kb, size, batch_size, is_train=True, learning_rate=1e-2,
     if support:
         print("Use supporting facts!")
         m = create_model(kb, size, batch_size, is_train=False, learning_rate=learning_rate,
-                         model="DistMult", observed_sets=observed_sets, composition=composition,
+                         model=model, observed_sets=observed_sets, composition=composition,
                          comp_util=comp_util, max_vocab_size=max_vocab_size, support=False)
         return SupportingEvidenceModel(m, learning_rate, is_train, which_sets=observed_sets)
 
