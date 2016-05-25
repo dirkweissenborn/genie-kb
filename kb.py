@@ -65,7 +65,7 @@ class KB:
         # holds all known facts for every arity
         self.__facts = {}
         # holds all facts independent of arity
-        self.__all_facts = list()
+        self.__all_facts = set()
         # holds set of all symbols in every dimension
         self.__symbols = list()
         # holds list of all symbols in every dimension
@@ -110,7 +110,7 @@ class KB:
         if arity not in self.__facts:
             self.__facts[arity] = list()
         self.__facts[arity].append(fact)
-        self.__all_facts.append(fact)
+        self.__all_facts.add(fact)
 
     def __add_to_symbols(self, key, dim):
         if len(self.__symbols) <= dim:
@@ -135,9 +135,11 @@ class KB:
         else:
             self.__maps[dim].update({key: [fact]})
 
-    def get_all_facts_of_arity(self, arity, typ="train"):
+    def get_all_facts_of_arity(self, arity, typ=None):
         if arity not in self.__facts:
             return set()
+        elif typ is None:
+            return self.__facts[arity]
         else:
             return filter(lambda x: x[2] == typ, self.__facts[arity])
 
