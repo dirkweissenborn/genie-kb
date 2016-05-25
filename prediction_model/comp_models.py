@@ -48,7 +48,6 @@ class CompositionUtil:
             for k in keys:
                 self._vocab[k] = len(self._vocab)
         else:
-            keys, values = list(), list()
             if len(values) > 0:
                 most_frequent = np.argsort(np.array(values))
                 max_size = min(max_size-len(must_contain)-1, len(most_frequent))
