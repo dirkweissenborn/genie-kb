@@ -9,7 +9,7 @@ class BatchNegTypeSampler:
         self.pos_per_batch = pos_per_batch
         self.neg_per_pos = neg_per_pos
         self.type_constraint = type_constraint
-        self.facts = [f[0] for f in self.kb.get_all_facts() if f[2] == which_set]
+        self.facts = [f[0] for f in self.kb.get_all_facts_of_arity(2, which_set)]
         self.num_facts = len(self.facts)
         self.epoch_size = self.num_facts // self.pos_per_batch
         self.reset()
@@ -17,8 +17,8 @@ class BatchNegTypeSampler:
 
         self._rngs = [random.Random(random.randint(0, 1000)) for _ in range(2*pos_per_batch)]
 
-        self._objs = list(self.kb.get_symbols(2))
-        self._subjs = list(self.kb.get_symbols(1))
+        self._objs = self.kb.get_vocab(2)
+        self._subjs = self.kb.get_vocab(1)
 
     def init_types(self):
         # add types to concepts
