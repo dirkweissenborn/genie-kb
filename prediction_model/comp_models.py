@@ -86,11 +86,13 @@ class CompositionalKBPredictionModel(AbstractKBPredictionModel):
             out = my_rnn.rnn(cell, inputs, sequence_length=length, initial_state=init_state, dtype=tf.float32)[1]
             return tf.slice(out, [0, cell.state_size-cell.output_size],[-1,-1])
         elif self._composition == "BiGRU":
-            cell = GRUCell(self._size // 2)
-            fw_out = my_rnn.rnn(cell, inputs, sequence_length=length, initial_state=init_state, dtype=tf.float32)[1]
-            rev_inputs = tf.reverse_sequence(tf.pack(inputs), length, 0, 1)
-            rev_inputs = tf.split(0, len(inputs), rev_inputs)
-            bw_out = my_rnn.rnn(cell, rev_inputs, sequence_length=length, initial_state=init_state, dtype=tf.float32)[1]
+            cell = GRUCell(self._size // 2, self._size)
+            with vs.variable_scope("forward"):
+                fw_out = my_rnn.rnn(cell, inputs, sequence_length=length, initial_state=init_state, dtype=tf.float32)[1]
+            with vs.variable_scope("backward"):
+                rev_inputs = tf.reverse_sequence(tf.pack(inputs), length, 0, 1)
+                rev_inputs = [tf.reshape(x, [-1, self._size]) for x in tf.split(0, len(inputs), rev_inputs)]
+                bw_out = my_rnn.rnn(cell, rev_inputs, sequence_length=length, initial_state=init_state, dtype=tf.float32)[1]
             return tf.concat(1, [fw_out, bw_out])
         else:
             raise NotImplementedError("Other compositions not implemented yet.")
