@@ -315,9 +315,9 @@ class QAModel:
             if self._query_part[i] == 0: # if this is a query (and not supporting evidence)
                 mask = [0] * l
             for _ in range(max_cands - l):
-                self._answer_cands[i].append(self._answer_cands[i][0])
+                self._answer_cands[i].append(self._answer_cands[i][0])  # dummy
                 if self._query_part[i] == 0:
-                    mask.append(-1e6)
+                    mask.append(-1e6)  # this is added to scores, serves basically as a bias mask to exclude dummy negative candidates
             if self._query_part[i] == 0:
                 cand_mask.append(mask)
 
@@ -411,12 +411,12 @@ class QAModel:
 
 
 def test_model():
-    model = QAModel(10, 3, 5, 5, num_consecutive_queries=3)
+    model = QAModel(10, 3, 5, 5, num_consecutive_queries=1)
     # 3 contexts (of length 3) with queries at 2/1/2 (totaling 5) positions
     # and respective negative candidates for each position
     contexts =       [[0, 1, 2]       , [1, 2, 0], [0, 1, 2]]
     positions =      [[0     , 2]     , [1]      , [1     , 2]]
-    neg_candidates = [[[1, 2], [0, 1]], [[0]] , [[0, 2], [0, 1]]]
+    neg_candidates = [[[2, 1], [0, 1]], [[0]] , [[0, 2], [0, 1]]]
 
     with tf.Session() as sess:
         sess.run(tf.initialize_all_variables())
