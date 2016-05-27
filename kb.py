@@ -73,7 +73,7 @@ class KB:
         return self.__positions[typ][offset:end]
 
     def id(self, word, fallback=-1):
-        self.__ids.get(word, fallback)
+        return self.__ids.get(word, fallback)
 
     def iter_contexts(self, typ):
         for i in range(len(self.__context_offsets[typ])):

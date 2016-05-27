@@ -24,26 +24,27 @@ class QAModel:
         self._init = model.default_init()
         self._composition = composition
         self._num_consecutive_queries = num_consecutive_queries
-        self._devices = devices
+        self._device0 = devices[0] if devices is not None else "/cpu:0"
+        self._device1 = devices[1 % len(devices)] if devices is not None else "/cpu:0"
+        self._device2 = devices[2 % len(devices)] if devices is not None else "/cpu:0"
+        self._device3 = devices[3 % len(devices)] if devices is not None else "/cpu:0"
 
-        with tf.device(devices[0] if devices is not None else "/cpu:0"):
+        with tf.device(self._device0):
             with vs.variable_scope(self.name(), initializer=self._init):
-                with tf.device("/cpu:0"):
+                with tf.device(self._device2):
                     self.candidates = tf.get_variable("E_candidate", [vocab_size, self._size])
 
                 self._init_inputs()
                 self.query = self._comp_f()
 
-                with tf.device("/cpu:0"):
+                with tf.device(self._device2):
                     answer, _ = tf.dynamic_partition(self._answer_input, self._query_partition, 2)
                     lookup_individual = tf.nn.embedding_lookup(self.candidates, answer)
-                self._score = tf_util.batch_dot(lookup_individual, self.query)
-
-                with tf.device("/cpu:0"):
+                    self._score = tf_util.batch_dot(lookup_individual, self.query)
                     cands,_ = tf.dynamic_partition(self._answer_candidates, self._query_partition, 2)
                     lookup = tf.nn.embedding_lookup(self.candidates, cands)
-                self._scores_with_negs = tf.squeeze(tf.batch_matmul(lookup, tf.expand_dims(self.query, [2])), [2])
-                self._scores_with_negs += self._candidate_mask  # number of negative candidates can vary for each example
+                    self._scores_with_negs = tf.squeeze(tf.batch_matmul(lookup, tf.expand_dims(self.query, [2])), [2])
+                    self._scores_with_negs += self._candidate_mask  # number of negative candidates can vary for each example
 
                 if is_train:
                     self.learning_rate = tf.Variable(float(learning_rate), trainable=False, name="lr")
@@ -97,22 +98,22 @@ class QAModel:
         return self.__class__.__name__
 
     def _comp_f(self):
-        with tf.device("/cpu:0"):
-            embed = tf.get_variable("E_words", [self._vocab_size, self._size])
-            embedded = tf.nn.embedding_lookup(embed, self._context)
+        embed = tf.get_variable("E_words", [self._vocab_size, self._size])
+        embedded = tf.nn.embedding_lookup(embed, self._context)
 
         max_position = tf.segment_max(self._positions, self._position_context)
         min_position = tf.segment_min(self._positions, self._position_context)
 
         e_inputs = [tf.reshape(e, [-1, self._size]) for e in tf.split(1, self._max_length, embedded)]
 
-        with vs.variable_scope("forward"):
-            outs_fw = self._composition_function(e_inputs, max_position)
-            outs_fw = tf.reshape(tf.concat(1, outs_fw), [-1, self._size])
+        with tf.device(self._device1):
+            with vs.variable_scope("forward"):
+                outs_fw = self._composition_function(e_inputs, max_position)
+                outs_fw = tf.reshape(tf.concat(1, outs_fw), [-1, self._size])
 
-            out_fw = tf.gather(outs_fw, self._positions + self._position_context*self._max_length)
+                out_fw = tf.gather(outs_fw, self._positions + self._position_context*self._max_length)
 
-        with tf.device(self._devices[1 % len(self._devices)] if self._devices is not None else "/cpu:0"):
+        with tf.device(self._device3):
             #use other device for backward rnn
             with vs.variable_scope("backward"):
                 rev_embedded = tf.reverse_sequence(embedded, self._length, 1, 0)
