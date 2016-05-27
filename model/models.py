@@ -31,13 +31,13 @@ class QAModel:
 
         with tf.device(self._device0):
             with vs.variable_scope(self.name(), initializer=self._init):
-                with tf.device(self._device2):
+                with tf.device(self._device3):
                     self.candidates = tf.get_variable("E_candidate", [vocab_size, self._size])
 
                 self._init_inputs()
                 self.query = self._comp_f()
 
-                with tf.device(self._device2):
+                with tf.device(self._device3):
                     answer, _ = tf.dynamic_partition(self._answer_input, self._query_partition, 2)
                     lookup_individual = tf.nn.embedding_lookup(self.candidates, answer)
                     self._score = tf_util.batch_dot(lookup_individual, self.query)
@@ -113,7 +113,7 @@ class QAModel:
 
                 out_fw = tf.gather(outs_fw, self._positions + self._position_context*self._max_length)
 
-        with tf.device(self._device3):
+        with tf.device(self._device2):
             #use other device for backward rnn
             with vs.variable_scope("backward"):
                 rev_embedded = tf.reverse_sequence(embedded, self._length, 1, 0)
