@@ -23,7 +23,7 @@ class QAModel:
         self._is_train = is_train
         self._init = model.default_init()
         self._composition = composition
-        self._num_consecutive_queries = num_consecutive_queries
+        self._num_queries = num_consecutive_queries
         self._device0 = devices[0] if devices is not None else "/cpu:0"
         self._device1 = devices[1 % len(devices)] if devices is not None else "/cpu:0"
         self._device2 = devices[2 % len(devices)] if devices is not None else "/cpu:0"
@@ -116,9 +116,11 @@ class QAModel:
                 init_state = tf.reshape(tf.tile(init_state, batch_size), [-1,self._size])
                 outs_fw = self._composition_function(e_inputs, max_position, init_state)
                 outs_fw.insert(0, init_state)
+                # reshape to all possible queries for all sequences. Dim[0]=batch_size*max_length+1.
+                # "+1" because we include the initial state
                 outs_fw = tf.reshape(tf.concat(1, outs_fw), [-1, self._size])
-
-                out_fw = tf.gather(outs_fw, self._positions + self._position_context*self._max_length)
+                # gather respective queries via their positions (with offset of context_index*(max_length+1))
+                out_fw = tf.gather(outs_fw, self._positions + self._position_context*(self._max_length+1))
 
         with tf.device(self._device1):
             #use other device for backward rnn
@@ -129,18 +131,23 @@ class QAModel:
                 e_inputs = [tf.reshape(e, [-1, self._size]) for e in tf.split(1, self._max_length, rev_embedded)]
                 outs_bw = self._composition_function(e_inputs, self._length - min_position - 1, init_state)
                 outs_bw.insert(0, init_state)
+                # reshape to all possible queries for all sequences. Dim[0]=batch_size*max_length+1.
+                # "+1" because we include the initial state
                 outs_bw = tf.reshape(tf.concat(1, tf.concat(1, outs_bw)), [-1, self._size])
-
+                # gather respective queries via their lengths-positions-1 (because reversed sequence)
+                #  (with offset of context_index*(max_length+1))
                 lengths_aligned = tf.gather(self._length, self._position_context)
-                out_bw = tf.gather(outs_bw, (lengths_aligned - self._positions - 1) + self._position_context*self._max_length)
+                out_bw = tf.gather(outs_bw, (lengths_aligned - self._positions - 1) +
+                                   self._position_context*(self._max_length+1))
 
+        # form query from forward and backward compositions
         query = tf.contrib.layers.fully_connected(tf.concat(1, [out_fw, out_bw]), self._size,
                                                   activation_fn=tf.tanh, weight_init=None)
-
+        # add supporting evidence to this query
         return self._supporting_evidence(query)
 
     def _supporting_evidence(self, query):
-        if self._num_consecutive_queries == 0:
+        if self._num_queries == 0:
             return query
         else:
             with vs.variable_scope("supporting"):
@@ -153,7 +160,7 @@ class QAModel:
                 self.evidence_weights = []
                 current_answer = query
                 current_query = query
-                for i in range(self._num_consecutive_queries):
+                for i in range(self._num_queries):
                     with vs.variable_scope("evidence"):
                         vs.get_variable_scope()._reuse = \
                                 any(vs.get_variable_scope().name in v.name for v in tf.trainable_variables())
@@ -181,7 +188,7 @@ class QAModel:
 
                         current_answer = weighted_answers * answer_weight + current_answer
 
-                        if i < self._num_consecutive_queries - 1:
+                        if i < self._num_queries - 1:
                             c = tf.contrib.layers.fully_connected(tf.concat(1, [current_query, weighted_answers]), self._size,
                                                                   activation_fn=tf.tanh, weight_init=None, bias_init=None)
 
