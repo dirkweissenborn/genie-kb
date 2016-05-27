@@ -2,7 +2,7 @@ import os
 import time
 from data.load_fb15k237 import load_fb15k, load_fb15k_type_constraints
 from sampler import *
-from eval import eval_triples
+from eval_fb import eval_triples
 import prediction_model as model
 import tensorflow as tf
 import sys

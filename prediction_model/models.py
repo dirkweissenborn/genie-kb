@@ -223,7 +223,7 @@ class DistMult(AbstractKBPredictionModel):
         E_candidate = tf.get_variable("E_candidate", [len(self.arg_vocab), self._size])
         E_rel = tf.get_variable("E_rel", [len(self._kb.get_symbols(0)), self._size])
 
-        e_arg = tf.tanh(tf.nn.embedding_lookup(E_candidate, self._x_input))
+        e_arg = tf.nn.embedding_lookup(E_candidate, self._x_input)
         e_rel = tf.nn.embedding_lookup(E_rel, self._rel_input)
         tf.get_variable_scope().reuse_variables()  #  reuse E_candidate
         return e_arg * e_rel
