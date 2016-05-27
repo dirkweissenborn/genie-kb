@@ -31,20 +31,18 @@ class QAModel:
 
         with tf.device(self._device0):
             with vs.variable_scope(self.name(), initializer=self._init):
-                with tf.device("/cpu:0"):
+                with tf.device(self._device3):
                     self.candidates = tf.get_variable("E_candidate", [vocab_size, self._size])
 
                 self._init_inputs()
                 self.query = self._comp_f()
 
-                with tf.device("/cpu:0"):
+                with tf.device(self._device3):
                     answer, _ = tf.dynamic_partition(self._answer_input, self._query_partition, 2)
                     lookup_individual = tf.nn.embedding_lookup(self.candidates, answer)
+                    self._score = tf_util.batch_dot(lookup_individual, self.query)
                     cands,_ = tf.dynamic_partition(self._answer_candidates, self._query_partition, 2)
                     lookup = tf.nn.embedding_lookup(self.candidates, cands)
-
-                with tf.device(self._device3):
-                    self._score = tf_util.batch_dot(lookup_individual, self.query)
                     self._scores_with_negs = tf.squeeze(tf.batch_matmul(lookup, tf.expand_dims(self.query, [2])), [2])
                     self._scores_with_negs += self._candidate_mask  # number of negative candidates can vary for each example
 
@@ -77,19 +75,22 @@ class QAModel:
     def _composition_function(self, inputs, length, init_state=None):
         if self._composition == "GRU":
             cell = GRUCell(self._size)
-            return my_rnn.rnn(cell, inputs, sequence_length=length, initial_state=init_state, dtype=tf.float32)[0]
+            return my_rnn.rnn(cell, inputs, sequence_length=length,
+                              initial_state=init_state, dtype=tf.float32)[0]
         elif self._composition == "LSTM":
             cell = BasicLSTMCell(self._size)
+            init_state = tf.concat(1, [tf.zeros_like(init_state, tf.float32), init_state]) if init_state else None
             outs = my_rnn.rnn(cell, inputs, sequence_length=length, initial_state=init_state, dtype=tf.float32)[0]
             return tf.slice(outs, [0, cell.state_size-cell.output_size],[-1,-1])
         elif self._composition == "BiGRU":
             cell = GRUCell(self._size // 2, self._size)
+            init_state_fw, init_state_bw = tf.split(1, 2, init_state) if init_state else (None, None)
             with vs.variable_scope("forward"):
-                fw_outs = my_rnn.rnn(cell, inputs, sequence_length=length, initial_state=init_state, dtype=tf.float32)[0]
+                fw_outs = my_rnn.rnn(cell, inputs, sequence_length=length, initial_state=init_state_fw, dtype=tf.float32)[0]
             with vs.variable_scope("backward"):
                 rev_inputs = tf.reverse_sequence(tf.pack(inputs), length, 0, 1)
                 rev_inputs = [tf.reshape(x, [-1, self._size]) for x in tf.split(0, len(inputs), rev_inputs)]
-                bw_outs = my_rnn.rnn(cell, rev_inputs, sequence_length=length, initial_state=init_state, dtype=tf.float32)[0]
+                bw_outs = my_rnn.rnn(cell, rev_inputs, sequence_length=length, initial_state=init_state_bw, dtype=tf.float32)[0]
                 bw_outs = tf.reverse_sequence(tf.pack(bw_outs), length, 0, 1)
                 bw_outs = [tf.reshape(x, [-1, self._size]) for x in tf.split(0, len(inputs), bw_outs)]
             return [tf.concat(1, [fw_out, bw_out]) for fw_out, bw_out in zip(fw_outs, bw_outs)]
@@ -100,29 +101,35 @@ class QAModel:
         return self.__class__.__name__
 
     def _comp_f(self):
-        with tf.device("/cpu:0"):
-            embed = tf.get_variable("E_words", [self._vocab_size, self._size])
-            embedded = tf.nn.embedding_lookup(embed, self._context)
+        embed = tf.get_variable("E_words", [self._vocab_size, self._size])
+        embedded = tf.nn.embedding_lookup(embed, self._context)
 
         max_position = tf.segment_max(self._positions, self._position_context)
         min_position = tf.segment_min(self._positions, self._position_context)
 
         e_inputs = [tf.reshape(e, [-1, self._size]) for e in tf.split(1, self._max_length, embedded)]
+        batch_size = tf.gather(tf.shape(self._context), [0])
 
-        with tf.device(self._device1):
+        with tf.device(self._device2):
             with vs.variable_scope("forward"):
-                outs_fw = self._composition_function(e_inputs, max_position)
+                init_state = tf.get_variable("init_state", [self._size])
+                init_state = tf.reshape(tf.tile(init_state, batch_size), [-1,self._size])
+                outs_fw = self._composition_function(e_inputs, max_position, init_state)
+                outs_fw.insert(0, init_state)
                 outs_fw = tf.reshape(tf.concat(1, outs_fw), [-1, self._size])
 
                 out_fw = tf.gather(outs_fw, self._positions + self._position_context*self._max_length)
 
-        with tf.device(self._device2):
+        with tf.device(self._device1):
             #use other device for backward rnn
             with vs.variable_scope("backward"):
+                init_state = tf.get_variable("init_state", [self._size])
+                init_state = tf.reshape(tf.tile(init_state, batch_size), [-1, self._size])
                 rev_embedded = tf.reverse_sequence(embedded, self._length, 1, 0)
                 e_inputs = [tf.reshape(e, [-1, self._size]) for e in tf.split(1, self._max_length, rev_embedded)]
-                outs_bw = self._composition_function(e_inputs, self._length - min_position - 1)
-                outs_bw = tf.reshape(tf.concat(1, outs_bw), [-1, self._size])
+                outs_bw = self._composition_function(e_inputs, self._length - min_position - 1, init_state)
+                outs_bw.insert(0, init_state)
+                outs_bw = tf.reshape(tf.concat(1, tf.concat(1, outs_bw)), [-1, self._size])
 
                 lengths_aligned = tf.gather(self._length, self._position_context)
                 out_bw = tf.gather(outs_bw, (lengths_aligned - self._positions - 1) + self._position_context*self._max_length)
@@ -199,15 +206,16 @@ class QAModel:
 
     def _init_inputs(self):
         #General
-        with tf.device("/cpu:0"):
+        with tf.device(self._device0):
             self._context = tf.placeholder(tf.int64, shape=[None, self._max_length], name="context")
             self._answer_candidates = tf.placeholder(tf.int64, shape=[None, None], name="candidates")
             self._answer_input = tf.placeholder(tf.int64, shape=[None], name="answer")
 
-        self._positions = tf.placeholder(tf.int64, shape=[None], name="answer_position")
-        self._position_context = tf.placeholder(tf.int64, shape=[None], name="answer_position_context")
-        self._candidate_mask = tf.placeholder(tf.float32, shape=[None, None], name="candidate_mask")
-        self._length = tf.placeholder(tf.int64, shape=[None], name="context_length")
+        with tf.device(self._device3):
+            self._positions = tf.placeholder(tf.int64, shape=[None], name="answer_position")
+            self._position_context = tf.placeholder(tf.int64, shape=[None], name="answer_position_context")
+            self._candidate_mask = tf.placeholder(tf.float32, shape=[None, None], name="candidate_mask")
+            self._length = tf.placeholder(tf.int64, shape=[None], name="context_length")
 
         self._ctxt = np.zeros([self._batch_size, self._max_length], dtype=np.int64)
         self._len = np.zeros([self._batch_size], dtype=np.int64)
@@ -422,23 +430,23 @@ if __name__ == '__main__':
 
 """
 Test update ...
-Loss: 1.099
-Loss: 1.094
-Loss: 1.087
-Loss: 1.074
-Loss: 1.049
-Loss: 1.005
-Loss: 0.929
-Loss: 0.803
-Loss: 0.634
-Loss: 0.484
+Loss: 1.012
+Loss: 1.002
+Loss: 0.990
+Loss: 0.973
+Loss: 0.948
+Loss: 0.912
+Loss: 0.865
+Loss: 0.807
+Loss: 0.736
+Loss: 0.648
 Test scoring (without supporting evidence) ...
-[ 0.4539119   1.71576202  0.43877554  1.32615399  1.71576202]
+[ 0.818488    1.35567915  0.90820128 -0.02418646  0.77772975]
 Test scoring with negative examples (and supporting evidence)...
-[[ 0.61326057  0.96973068 -1.31497335]
- [ 2.75609517 -1.09740484 -2.04133058]
- [ 0.78911084 -0.30133599 -0.58210009]
- [ 1.32615399  0.80211902 -1.81083333]
- [ 1.7157619  -0.69794691 -1.27611041]]
+[[  9.91435409e-01  -4.19906378e-01   5.15302122e-02]
+ [  1.89884555e+00  -3.02041292e-01  -1.25379610e+00]
+ [  3.59776109e-01  -1.48627639e-01  -9.99999625e+05]
+ [ -2.41864566e-02  -1.41035974e-01   1.46159694e-01]
+ [  7.77729750e-01  -2.62276053e-01  -5.17708778e-01]]
 Done
 """
