@@ -258,7 +258,10 @@ class QAModel:
         for i, pos in enumerate(positions):
             self._pos_ctxt.append(self._batch_idx)
             self._answer_in.append(context[pos])
-            self._answer_cands.append([context[pos]] + neg_candidates[i])
+            cands = [context[pos]]
+            if neg_candidates is not None and i < len(neg_candidates) and neg_candidates[i] is not None:
+                cands.extend(neg_candidates[i])
+            self._answer_cands.append(cands)
             self._query_part.append(0 if is_query else 1)
 
         query_batch_idx = self._batch_idx
@@ -276,7 +279,7 @@ class QAModel:
                         self._query_part.append(1)
                         self.supporting_qa.append((context, supp_positions))
                 else:
-                    self._add_example_and_negs(supp_context, supp_positions, [], is_query=False)
+                    self._add_example_and_negs(supp_context, supp_positions, None, is_query=False)
                     self.supporting_qa.append((supp_context, supp_positions))
                 self._support.extend([self._query_idx] * len(supp_positions))
 
