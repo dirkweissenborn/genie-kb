@@ -31,15 +31,16 @@ class QAModel:
 
         with tf.device(self._device0):
             with vs.variable_scope(self.name(), initializer=self._init):
-                with tf.device(self._device3):
+                with tf.device("/cpu:0"):
                     self.candidates = tf.get_variable("E_candidate", [vocab_size, self._size])
 
                 self._init_inputs()
                 self.query = self._comp_f()
 
-                with tf.device(self._device3):
+                with tf.device("/cpu:0"):
                     answer, _ = tf.dynamic_partition(self._answer_input, self._query_partition, 2)
                     lookup_individual = tf.nn.embedding_lookup(self.candidates, answer)
+                with tf.device(self._device3):
                     self._score = tf_util.batch_dot(lookup_individual, self.query)
                     cands,_ = tf.dynamic_partition(self._answer_candidates, self._query_partition, 2)
                     lookup = tf.nn.embedding_lookup(self.candidates, cands)
@@ -98,8 +99,9 @@ class QAModel:
         return self.__class__.__name__
 
     def _comp_f(self):
-        embed = tf.get_variable("E_words", [self._vocab_size, self._size])
-        embedded = tf.nn.embedding_lookup(embed, self._context)
+        with tf.device("/cpu:0"):
+            embed = tf.get_variable("E_words", [self._vocab_size, self._size])
+            embedded = tf.nn.embedding_lookup(embed, self._context)
 
         max_position = tf.segment_max(self._positions, self._position_context)
         min_position = tf.segment_min(self._positions, self._position_context)
