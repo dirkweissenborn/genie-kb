@@ -27,7 +27,7 @@ tf.app.flags.DEFINE_integer("random_seed", 1234, "Seed for rng.")
 tf.app.flags.DEFINE_integer("subsample_validation", 2000, "number of facts to evaluate during validation.")
 tf.app.flags.DEFINE_integer("num_consecutive_queries", 1, "number of consecutive queries to supporting evidence.")
 #tf.app.flags.DEFINE_boolean("support", False, "Use supporting evidence.")
-tf.app.flags.DEFINE_string("device", "/cpu:0", "Use this device.")
+tf.app.flags.DEFINE_string("devices", "/cpu:0", "Use this device.")
 tf.app.flags.DEFINE_string("save_dir", "save/" + time.strftime("%d%m%Y_%H%M%S", time.localtime()),
                            "Where to save model and its configuration, always last will be kept.")
 tf.app.flags.DEFINE_string("composition", None, "'LSTM', 'GRU', 'RNN', 'BoW', 'BiLSTM', 'BiGRU', 'BiRNN', 'Conv'")
@@ -57,8 +57,10 @@ with tf.Session(config=config) as sess:
     print("Creating model ...")
     with tf.device(FLAGS.device):
         max_length = kb.max_context_length
+        devices = FLAGS.devices.split(",")
         m = QAModel(FLAGS.size, FLAGS.batch_size, len(kb.vocab), max_length,
-                    learning_rate=FLAGS.learning_rate, num_consecutive_queries=1)
+                    learning_rate=FLAGS.learning_rate, num_consecutive_queries=1,
+                    devices=devices)
 
     print("Created model: " + m.name())
 

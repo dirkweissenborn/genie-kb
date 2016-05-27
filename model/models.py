@@ -15,7 +15,7 @@ import functools
 class QAModel:
 
     def __init__(self, size, batch_size, vocab_size, max_length, is_train=True, learning_rate=1e-2,
-                 composition="GRU", num_consecutive_queries=0):
+                 composition="GRU", num_consecutive_queries=0, devices=None):
         self._vocab_size = vocab_size
         self._max_length = max_length
         self._size = size
@@ -24,48 +24,50 @@ class QAModel:
         self._init = model.default_init()
         self._composition = composition
         self._num_consecutive_queries = num_consecutive_queries
+        self._devices = devices
 
-        with vs.variable_scope(self.name(), initializer=self._init):
-            with tf.device("/cpu:0"):
-                self.candidates = tf.get_variable("E_candidate", [vocab_size, self._size])
+        with tf.device(devices[0] if devices is not None else "/cpu:0"):
+            with vs.variable_scope(self.name(), initializer=self._init):
+                with tf.device("/cpu:0"):
+                    self.candidates = tf.get_variable("E_candidate", [vocab_size, self._size])
 
-            self._init_inputs()
-            self.query = self._comp_f()
+                self._init_inputs()
+                self.query = self._comp_f()
 
-            with tf.device("/cpu:0"):
-                answer, _ = tf.dynamic_partition(self._answer_input, self._query_partition, 2)
-                lookup_individual = tf.nn.embedding_lookup(self.candidates, answer)
-            self._score = tf_util.batch_dot(lookup_individual, self.query)
+                with tf.device("/cpu:0"):
+                    answer, _ = tf.dynamic_partition(self._answer_input, self._query_partition, 2)
+                    lookup_individual = tf.nn.embedding_lookup(self.candidates, answer)
+                self._score = tf_util.batch_dot(lookup_individual, self.query)
 
-            with tf.device("/cpu:0"):
-                cands,_ = tf.dynamic_partition(self._answer_candidates, self._query_partition, 2)
-                lookup = tf.nn.embedding_lookup(self.candidates, cands)
-            self._scores_with_negs = tf.squeeze(tf.batch_matmul(lookup, tf.expand_dims(self.query, [2])), [2])
-            self._scores_with_negs += self._candidate_mask  # number of negative candidates can vary for each example
+                with tf.device("/cpu:0"):
+                    cands,_ = tf.dynamic_partition(self._answer_candidates, self._query_partition, 2)
+                    lookup = tf.nn.embedding_lookup(self.candidates, cands)
+                self._scores_with_negs = tf.squeeze(tf.batch_matmul(lookup, tf.expand_dims(self.query, [2])), [2])
+                self._scores_with_negs += self._candidate_mask  # number of negative candidates can vary for each example
 
-            if is_train:
-                self.learning_rate = tf.Variable(float(learning_rate), trainable=False, name="lr")
-                self.learning_rate_decay_op = self.learning_rate.assign(self.learning_rate * 0.9)
-                self.global_step = tf.Variable(0, trainable=False, name="step")
+                if is_train:
+                    self.learning_rate = tf.Variable(float(learning_rate), trainable=False, name="lr")
+                    self.learning_rate_decay_op = self.learning_rate.assign(self.learning_rate * 0.9)
+                    self.global_step = tf.Variable(0, trainable=False, name="step")
 
-                self.opt = tf.train.AdamOptimizer(self.learning_rate, beta1=0.0)
+                    self.opt = tf.train.AdamOptimizer(self.learning_rate, beta1=0.0)
 
-                current_batch_size = tf.gather(tf.shape(self._scores_with_negs), [0])
-                labels = tf.constant([0], tf.int64)
-                labels = tf.tile(labels, current_batch_size)
-                loss = math_ops.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(self._scores_with_negs, labels))
+                    current_batch_size = tf.gather(tf.shape(self._scores_with_negs), [0])
+                    labels = tf.constant([0], tf.int64)
+                    labels = tf.tile(labels, current_batch_size)
+                    loss = math_ops.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(self._scores_with_negs, labels))
 
-                train_params = tf.trainable_variables()
-                self.training_weight = tf.Variable(1.0, trainable=False, name="training_weight")
+                    train_params = tf.trainable_variables()
+                    self.training_weight = tf.Variable(1.0, trainable=False, name="training_weight")
 
-                self._loss = loss / math_ops.cast(current_batch_size, dtypes.float32)
-                self._grads = tf.gradients(self._loss, train_params, self.training_weight)
+                    self._loss = loss / math_ops.cast(current_batch_size, dtypes.float32)
+                    self._grads = tf.gradients(self._loss, train_params, self.training_weight)
 
-                if len(train_params) > 0:
-                    self._update = self.opt.apply_gradients(zip(self._grads[:len(train_params)], train_params),
-                                                            global_step=self.global_step)
-                else:
-                    self._update = tf.assign_add(self.global_step, 1)
+                    if len(train_params) > 0:
+                        self._update = self.opt.apply_gradients(zip(self._grads[:len(train_params)], train_params),
+                                                                global_step=self.global_step)
+                    else:
+                        self._update = tf.assign_add(self.global_step, 1)
 
         self.saver = tf.train.Saver(tf.all_variables(), max_to_keep=1)
 
@@ -103,19 +105,23 @@ class QAModel:
         min_position = tf.segment_min(self._positions, self._position_context)
 
         e_inputs = [tf.reshape(e, [-1, self._size]) for e in tf.split(1, self._max_length, embedded)]
+
         with vs.variable_scope("forward"):
             outs_fw = self._composition_function(e_inputs, max_position)
             outs_fw = tf.reshape(tf.concat(1, outs_fw), [-1, self._size])
 
             out_fw = tf.gather(outs_fw, self._positions + self._position_context*self._max_length)
-        with vs.variable_scope("backward"):
-            rev_embedded = tf.reverse_sequence(embedded, self._length, 1, 0)
-            e_inputs = [tf.reshape(e, [-1, self._size]) for e in tf.split(1, self._max_length, rev_embedded)]
-            outs_bw = self._composition_function(e_inputs, self._length - min_position - 1)
-            outs_bw = tf.reshape(tf.concat(1, outs_bw), [-1, self._size])
 
-            lengths_aligned = tf.gather(self._length, self._position_context)
-            out_bw = tf.gather(outs_bw, (lengths_aligned - self._positions - 1) + self._position_context*self._max_length)
+        with tf.device(self._devices[1 % len(self._devices)] if self._devices is not None else "/cpu:0"):
+            #use other device for backward rnn
+            with vs.variable_scope("backward"):
+                rev_embedded = tf.reverse_sequence(embedded, self._length, 1, 0)
+                e_inputs = [tf.reshape(e, [-1, self._size]) for e in tf.split(1, self._max_length, rev_embedded)]
+                outs_bw = self._composition_function(e_inputs, self._length - min_position - 1)
+                outs_bw = tf.reshape(tf.concat(1, outs_bw), [-1, self._size])
+
+                lengths_aligned = tf.gather(self._length, self._position_context)
+                out_bw = tf.gather(outs_bw, (lengths_aligned - self._positions - 1) + self._position_context*self._max_length)
 
         query = tf.contrib.layers.fully_connected(tf.concat(1, [out_fw, out_bw]), self._size,
                                                   activation_fn=tf.tanh, weight_init=None)
