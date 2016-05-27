@@ -42,7 +42,7 @@ print("Loading KB ...")
 kb = KB()
 kb.load(FLAGS.kb)
 
-sampler = BatchSampler(kb, FLAGS.batch_size, "test")
+sampler = BatchSampler(kb, FLAGS.batch_size, "train")
 
 train_dir = os.path.join(FLAGS.save_dir)
 
