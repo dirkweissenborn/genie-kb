@@ -26,17 +26,20 @@ class QAModel:
         self._num_consecutive_queries = num_consecutive_queries
 
         with vs.variable_scope(self.name(), initializer=self._init):
-            self.candidates = tf.get_variable("E_candidate", [vocab_size, self._size])
+            with tf.device("/cpu:0"):
+                self.candidates = tf.get_variable("E_candidate", [vocab_size, self._size])
 
             self._init_inputs()
             self.query = self._comp_f()
 
-            answer, _ = tf.dynamic_partition(self._answer_input, self._query_partition, 2)
-            lookup_individual = tf.nn.embedding_lookup(self.candidates, answer)
+            with tf.device("/cpu:0"):
+                answer, _ = tf.dynamic_partition(self._answer_input, self._query_partition, 2)
+                lookup_individual = tf.nn.embedding_lookup(self.candidates, answer)
             self._score = tf_util.batch_dot(lookup_individual, self.query)
 
-            cands,_ = tf.dynamic_partition(self._answer_candidates, self._query_partition, 2)
-            lookup = tf.nn.embedding_lookup(self.candidates, cands)
+            with tf.device("/cpu:0"):
+                cands,_ = tf.dynamic_partition(self._answer_candidates, self._query_partition, 2)
+                lookup = tf.nn.embedding_lookup(self.candidates, cands)
             self._scores_with_negs = tf.squeeze(tf.batch_matmul(lookup, tf.expand_dims(self.query, [2])), [2])
             self._scores_with_negs += self._candidate_mask  # number of negative candidates can vary for each example
 
@@ -92,8 +95,9 @@ class QAModel:
         return self.__class__.__name__
 
     def _comp_f(self):
-        embed = tf.get_variable("E_words", [self._vocab_size, self._size])
-        embedded = tf.nn.embedding_lookup(embed, self._context)
+        with tf.device("/cpu:0"):
+            embed = tf.get_variable("E_words", [self._vocab_size, self._size])
+            embedded = tf.nn.embedding_lookup(embed, self._context)
 
         max_position = tf.segment_max(self._positions, self._position_context)
         min_position = tf.segment_min(self._positions, self._position_context)
@@ -185,13 +189,15 @@ class QAModel:
 
     def _init_inputs(self):
         #General
-        self._context = tf.placeholder(tf.int64, shape=[None, self._max_length], name="context")
+        with tf.device("/cpu:0"):
+            self._context = tf.placeholder(tf.int64, shape=[None, self._max_length], name="context")
+            self._answer_candidates = tf.placeholder(tf.int64, shape=[None, None], name="candidates")
+            self._answer_input = tf.placeholder(tf.int64, shape=[None], name="answer")
+
         self._positions = tf.placeholder(tf.int64, shape=[None], name="answer_position")
         self._position_context = tf.placeholder(tf.int64, shape=[None], name="answer_position_context")
+        self._candidate_mask = tf.placeholder(tf.float32, shape=[None, None], name="candidate_mask")
         self._length = tf.placeholder(tf.int64, shape=[None], name="context_length")
-        self._answer_candidates = tf.placeholder(tf.int64, shape=[None, None], name="candidates")
-        self._candidate_mask = tf.placeholder(tf.float32, shape=[None, None], name="num_candidates")
-        self._answer_input = tf.placeholder(tf.int64, shape=[None], name="answer")
 
         self._ctxt = np.zeros([self._batch_size, self._max_length], dtype=np.int64)
         self._len = np.zeros([self._batch_size], dtype=np.int64)
