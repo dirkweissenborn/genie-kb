@@ -55,12 +55,11 @@ config = tf.ConfigProto(allow_soft_placement=True)
 config.gpu_options.allow_growth = True
 with tf.Session(config=config) as sess:
     print("Creating model ...")
-    with tf.device(FLAGS.device):
-        max_length = kb.max_context_length
-        devices = FLAGS.devices.split(",")
-        m = QAModel(FLAGS.size, FLAGS.batch_size, len(kb.vocab), max_length,
-                    learning_rate=FLAGS.learning_rate, num_consecutive_queries=1,
-                    devices=devices)
+    max_length = kb.max_context_length
+    devices = FLAGS.devices.split(",")
+    m = QAModel(FLAGS.size, FLAGS.batch_size, len(kb.vocab), max_length,
+                learning_rate=FLAGS.learning_rate, num_consecutive_queries=1,
+                devices=devices)
 
     print("Created model: " + m.name())
 
