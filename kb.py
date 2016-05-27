@@ -49,11 +49,15 @@ class KB:
 
     def save(self, file):
         with open(file, 'wb') as f:
-            pickle.dump([self.__contexts, self.__positions, self.__vocab, self.__ids], f)
+            pickle.dump([self.__contexts, self.__positions, self.__vocab, self.__ids,
+                         self.__context_offsets, self.__position_offsets,
+                         self.__max_context_length, self.__max_position_length], f)
 
     def load(self, file):
         with open(file, 'rb') as f:
-            [self.__contexts, self.__positions, self.__vocab, self.__ids] = pickle.load(f)
+            [self.__contexts, self.__positions, self.__vocab, self.__ids,
+             self.__context_offsets, self.__position_offsets,
+             self.__max_context_length, self.__max_position_length] = pickle.load(f)
 
     def context(self, typ, i):
         offset = self.__context_offsets[typ][i]
@@ -84,7 +88,7 @@ class KB:
         return self.__max_context_length
 
     @property
-    def max_context_length(self):
+    def max_position_length(self):
         return self.__max_position_length
 
     @property
