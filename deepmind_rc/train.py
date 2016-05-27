@@ -20,9 +20,9 @@ tf.app.flags.DEFINE_integer("size", 256, "hidden size of model")
 # training
 tf.app.flags.DEFINE_float("learning_rate", 1e-3, "Learning rate.")
 tf.app.flags.DEFINE_float("learning_rate_decay", 0.9, "Learning rate decay when loss on validation set does not improve.")
-tf.app.flags.DEFINE_integer("batch_size", 100, "Number of examples in each batch for training.")
+tf.app.flags.DEFINE_integer("batch_size", 25, "Number of examples in each batch for training.")
 tf.app.flags.DEFINE_integer("max_iterations", -1, "Maximum number of batches during training. -1 means until convergence")
-tf.app.flags.DEFINE_integer("ckpt_its", -1, "Number of iterations until running checkpoint. Negative means after every epoch.")
+tf.app.flags.DEFINE_integer("ckpt_its", 1000, "Number of iterations until running checkpoint. Negative means after every epoch.")
 tf.app.flags.DEFINE_integer("random_seed", 1234, "Seed for rng.")
 tf.app.flags.DEFINE_integer("subsample_validation", 2000, "number of facts to evaluate during validation.")
 tf.app.flags.DEFINE_integer("num_consecutive_queries", 1, "number of consecutive queries to supporting evidence.")
@@ -42,9 +42,9 @@ print("Loading KB ...")
 kb = KB()
 kb.load(FLAGS.kb)
 
-sampler = BatchSampler(kb, FLAGS.batch_size)
+sampler = BatchSampler(kb, FLAGS.batch_size, "test")
 
-train_dir = os.path.join(FLAGS.save_dir, "train")
+train_dir = os.path.join(FLAGS.save_dir)
 
 i = 0
 
@@ -78,6 +78,7 @@ with tf.Session(config=config) as sess:
     else:
         if not os.path.exists(train_dir):
             os.makedirs(train_dir)
+        print("Initializing variables ...")
         sess.run(tf.initialize_all_variables())
 
     num_params = functools.reduce(lambda acc, x: acc + x.size, sess.run(tf.trainable_variables()), 0)

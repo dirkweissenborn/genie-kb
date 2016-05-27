@@ -39,12 +39,15 @@ class BatchSampler:
         if self.end_of_epoch():
             print("WARNING: End of epoch reached in sampler. Resetting automatically.")
             self.reset()
-        batch = []
+        batch = ([], [], [], [])
         for i in range(self.batch_size):
             context = self.kb.context(self.which_set, self.todo[i])
             positions = self.kb.positions(self.which_set, self.todo[i])
             neg_cands = [context[x] for x in positions if context[x] != context[positions[-1]]]
-            batch.append((context, [positions[-1]], neg_cands, [(None, positions[:-1])]))
+            batch[0].append(context)
+            batch[1].append([positions[-1]])
+            batch[2].append([neg_cands])
+            batch[3].append([(None, positions[:-1])])
 
         return batch
 

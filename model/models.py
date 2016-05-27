@@ -26,7 +26,7 @@ class QAModel:
         self._num_consecutive_queries = num_consecutive_queries
 
         with vs.variable_scope(self.name(), initializer=self._init):
-            self.candidates = tf.get_variable("E_candidate", [self._max_length, self._size])
+            self.candidates = tf.get_variable("E_candidate", [vocab_size, self._size])
 
             self._init_inputs()
             self.query = self._comp_f()
@@ -259,12 +259,11 @@ class QAModel:
                     for i, pos in enumerate(supp_positions):
                         self._pos_ctxt.append(query_batch_idx)
                         self._answer_in.append(context[pos])
-                        self._answer_cands.append([context[pos]] + neg_candidates[i])
+                        self._answer_cands.append([context[pos]])
                         self._query_part.append(1)
                         self.supporting_qa.append((context, supp_positions))
                 else:
-                    self._add_example_and_negs(supp_context, supp_positions,
-                                               [neg_candidates[0]] * len(supp_positions), is_query=False)
+                    self._add_example_and_negs(supp_context, supp_positions, [], is_query=False)
                     self.supporting_qa.append((supp_context, supp_positions))
                 self._support.extend([self._query_idx] * len(supp_positions))
 
