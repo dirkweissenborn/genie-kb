@@ -54,7 +54,7 @@ class BatchSampler:
             contexts.append(ctxt)
             starts.append([start[-1]])  # span start
             ends.append([end[-1]])  # span end
-            answers.append(answer[-1])
+            answers.append([answer[-1]])
 
             start = [p for p in start if p < k]
             end = end[:len(start)]
