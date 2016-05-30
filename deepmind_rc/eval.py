@@ -2,8 +2,8 @@ import numpy as np
 import sys
 
 def rank_batch(sess, model, batch):
-    contexts, positions, neg_candidates, supporting_evidence = batch
-    scores = model.score_examples_with_negs(sess, contexts, positions, neg_candidates, supporting_evidence)
+    contexts, starts, ends, answers, neg_candidates, supporting_evidence = batch
+    scores = model.score_examples_with_negs(sess, contexts, starts, ends, answers, neg_candidates, supporting_evidence)
     ix = np.argsort(scores, 1)[:,::-1]
     rank = np.where(ix == 0)[1] + 1
 
@@ -28,10 +28,6 @@ def eval_dataset(sess, model, sampler, verbose=False):
 
     acc = tp / total
     mrr = rr / total
-
-    if verbose:
-        print("Accuracy: %.3f" % acc)
-        print("MRR: %.3f" % mrr)
 
     return acc, mrr
 

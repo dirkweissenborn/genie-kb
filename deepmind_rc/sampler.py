@@ -34,32 +34,40 @@ class BatchSampler:
 
     def get_batch(self):
         '''
-        Note, the data in the kb is structured as follows: context= supporting_evidence + "||" + query.
+        Note, the data in the kb is structured as follows: contexts= supporting_evidence + "||" + query.
         Thus, we have to split contexts.
-        :return: list of (context, query_positions, negative_candidates, supporting_facts)
+        :return: list of (contexts, query_positions, negative_candidates, supporting_facts)
         '''
         if self.end_of_epoch():
             print("WARNING: End of epoch reached in sampler. Resetting automatically.")
             self.reset()
-        batch = ([], [], [], [])
+        contexts, starts, ends, answers, neg_candidates, supporting_evidence = [], [], [], [], [], []
         splitter = self.kb.id("||")
         for i in range(self.batch_size):
-            context = self.kb.context(self.which_set, self.todo[i])
-            k = len(context)-1
-            while context[k] != splitter:
+            ctxt = self.kb.context(self.which_set, self.todo[i])
+            k = len(ctxt)-1
+            while ctxt[k] != splitter:
                 k -= 1
             # < k: supporting evidence; >k: query
-            positions = self.kb.positions(self.which_set, self.todo[i])
-            batch[0].append(context[k+1:])  # query
-            batch[1].append([positions[-1]-k-1])  # position to be predicted in query
+            start, end = self.kb.spans(self.which_set, self.todo[i])
+            answer = self.kb.answers(self.which_set, self.todo[i])
+            contexts.append(ctxt)
+            starts.append([start[-1]])  # span start
+            ends.append([end[-1]])  # span end
+            answers.append(answer[-1])
 
-            neg_cands = list(set(context[x] for x in positions if x < k and context[x] != context[positions[-1]]))
-            batch[2].append([neg_cands])  # negative candidates are all entities within supporting evidence that are not the answer
-            batch[3].append([(context[:k], [p for p in positions if p < k])])  # points of interest in supporting evidence
+            start = [p for p in start if p < k]
+            end = end[:len(start)]
+            answer = answer[:len(start)]
+            neg_cands = list(set(answer))
+            # negative candidates are all entities within supporting evidence that are not the answer
+            neg_candidates.append([neg_cands])
+            # points of interest in supporting evidence
+            supporting_evidence.append([(None, start, end, answer)])
         
         self.todo = self.todo[self.batch_size:]
         self.count += 1
-        return batch
+        return (contexts, starts, ends, answers, neg_candidates, supporting_evidence)
 
     def get_epoch(self):
         return self.count / self.epoch_size

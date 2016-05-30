@@ -23,15 +23,15 @@ def add2kb(fn, typ):
         document = content[2].decode('utf-8').strip().split(' ')
         question = content[4].decode('utf-8').strip().split(' ')
         total = document+["||"]+question
-        positions = [i for i in range(len(total)) if total[i].startswith("@entity")]
-
+        positions = [(i, i+1) for i in range(len(total)) if total[i].startswith("@entity")]
+        answers = [total[p[0]] for p in positions]
         answer = content[6].decode('utf-8').strip()
         for i in range(len(question)):
             if question[i] == "@placeholder":
                 position = i+len(document)+1
-                total[position] = answer
-                positions.append(position)
-        kb.add(total, positions, typ)
+                positions.append((position, position+1))
+                answers.append(answer)
+        kb.add(total, positions, answers, typ)
 
         k[0] += 1
         if k[0] % 100 == 0:
