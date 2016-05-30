@@ -337,42 +337,35 @@ class QAModel:
         return self._feed_dict
 
     def score_examples(self, sess, contexts, positions, supporting_evidence=None):
-        i = j = 0
-        num_queries = functools.reduce(lambda a,x: a+len(x), positions, 0)
-        result = np.zeros([num_queries])
-        while i < len(contexts):
-            batch_size = min(self._batch_size, len(contexts)-i)
-            self._start_adding_examples()
-            num_batch_queries = 0
-            for batch_idx in range(batch_size):
-                num_batch_queries += len(positions[i + batch_idx])
-                self._add_example(contexts[i + batch_idx],
-                                  positions[i + batch_idx],
-                                  None if supporting_evidence is None else supporting_evidence[i+batch_idx])
-            self._finish_adding_examples()
-
-            result[j:j+num_batch_queries] = sess.run(self._score, feed_dict=self._get_feed_dict())
-            i += batch_size
-            j += num_batch_queries
-
-        return result
+        return self.score_examples_with_negs(sess, contexts, positions, None, supporting_evidence=supporting_evidence)
 
     def score_examples_with_negs(self, sess, contexts, positions, neg_candidates, supporting_evidence=None):
         i = j = 0
         num_queries = functools.reduce(lambda a,x: a+len(x), positions, 0)
-        result = np.zeros([num_queries, len(neg_candidates[0][0])+1])
+        max_neg_candidates = 0
+        if neg_candidates:
+            for cands in neg_candidates:
+                for cs in cands:
+                    max_neg_candidates = max(max_neg_candidates, len(cs))
+        result = np.zeros([num_queries, max_neg_candidates+1])
         while i < len(contexts):
             batch_size = min(self._batch_size, len(contexts)-i)
             self._start_adding_examples()
             num_batch_queries = 0
             for batch_idx in range(batch_size):
                 num_batch_queries += len(positions[i + batch_idx])
-                self._add_example_and_negs(contexts[i + batch_idx],
-                                           positions[i + batch_idx],
-                                           neg_candidates[i+batch_idx],
-                                           None if supporting_evidence is None else supporting_evidence[i+batch_idx])
+                if neg_candidates:
+                    self._add_example_and_negs(contexts[i + batch_idx],
+                                               positions[i + batch_idx],
+                                               neg_candidates[i+batch_idx],
+                                               None if supporting_evidence is None else supporting_evidence[i+batch_idx])
+                else:
+                    self._add_example(contexts[i + batch_idx],
+                                      positions[i + batch_idx],
+                                      None if supporting_evidence is None else supporting_evidence[i+batch_idx])
             self._finish_adding_examples()
-            result[j:j+num_batch_queries] = sess.run(self._scores_with_negs, feed_dict=self._get_feed_dict())
+            num_cands = len(self._answer_cands[0])
+            result[j:j+num_batch_queries, 0:num_cands] = sess.run(self._scores_with_negs, feed_dict=self._get_feed_dict())
             i += batch_size
             j += num_batch_queries
 
