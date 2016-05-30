@@ -58,6 +58,7 @@ class BatchSampler:
             batch[3].append([(context[:k], [p for p in positions if p < k])])  # points of interest in supporting evidence
         
         self.todo = self.todo[self.batch_size:]
+        self.count += 1
         return batch
 
     def get_epoch(self):
