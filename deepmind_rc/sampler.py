@@ -53,10 +53,11 @@ class BatchSampler:
             batch[0].append(context[k+1:])  # query
             batch[1].append([positions[-1]-k-1])  # position to be predicted in query
 
-            neg_cands = [context[x] for x in positions if x < k and context[x] != context[positions[-1]]]
+            neg_cands = list(set(context[x] for x in positions if x < k and context[x] != context[positions[-1]]))
             batch[2].append([neg_cands])  # negative candidates are all entities within supporting evidence that are not the answer
             batch[3].append([(context[:k], [p for p in positions if p < k])])  # points of interest in supporting evidence
-
+        
+        self.todo = self.todo[self.batch_size:]
         return batch
 
     def get_epoch(self):

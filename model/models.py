@@ -31,44 +31,45 @@ class QAModel:
 
         with tf.device(self._device0):
             with vs.variable_scope(self.name(), initializer=self._init):
-                with tf.device(self._device3):
-                    self.candidates = tf.get_variable("E_candidate", [vocab_size, self._size])
-
                 self._init_inputs()
-                self.query = self._comp_f()
-
-                with tf.device(self._device3):
+                with tf.device("/cpu:0"):
+                    self.candidates = tf.get_variable("E_candidate", [vocab_size, self._size])
                     answer, _ = tf.dynamic_partition(self._answer_input, self._query_partition, 2)
                     lookup_individual = tf.nn.embedding_lookup(self.candidates, answer)
-                    self._score = tf_util.batch_dot(lookup_individual, self.query)
                     cands,_ = tf.dynamic_partition(self._answer_candidates, self._query_partition, 2)
                     lookup = tf.nn.embedding_lookup(self.candidates, cands)
+
+                self.query = self._comp_f()
+                
+                with tf.device(self._device0):
+                    self.query = self._supporting_evidence(self.query)
+                    self._score = tf_util.batch_dot(lookup_individual, self.query)
                     self._scores_with_negs = tf.squeeze(tf.batch_matmul(lookup, tf.expand_dims(self.query, [2])), [2])
                     self._scores_with_negs += self._candidate_mask  # number of negative candidates can vary for each example
 
-                if is_train:
-                    self.learning_rate = tf.Variable(float(learning_rate), trainable=False, name="lr")
-                    self.learning_rate_decay_op = self.learning_rate.assign(self.learning_rate * 0.9)
-                    self.global_step = tf.Variable(0, trainable=False, name="step")
+                    if is_train:
+                        self.learning_rate = tf.Variable(float(learning_rate), trainable=False, name="lr")
+                        self.learning_rate_decay_op = self.learning_rate.assign(self.learning_rate * 0.9)
+                        self.global_step = tf.Variable(0, trainable=False, name="step")
 
-                    self.opt = tf.train.AdamOptimizer(self.learning_rate, beta1=0.0)
+                        self.opt = tf.train.AdamOptimizer(self.learning_rate, beta1=0.0)
 
-                    current_batch_size = tf.gather(tf.shape(self._scores_with_negs), [0])
-                    labels = tf.constant([0], tf.int64)
-                    labels = tf.tile(labels, current_batch_size)
-                    loss = math_ops.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(self._scores_with_negs, labels))
+                        current_batch_size = tf.gather(tf.shape(self._scores_with_negs), [0])
+                        labels = tf.constant([0], tf.int64)
+                        labels = tf.tile(labels, current_batch_size)
+                        loss = math_ops.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(self._scores_with_negs, labels))
 
-                    train_params = tf.trainable_variables()
-                    self.training_weight = tf.Variable(1.0, trainable=False, name="training_weight")
+                        train_params = tf.trainable_variables()
+                        self.training_weight = tf.Variable(1.0, trainable=False, name="training_weight")
 
-                    self._loss = loss / math_ops.cast(current_batch_size, dtypes.float32)
-                    self._grads = tf.gradients(self._loss, train_params, self.training_weight)
+                        self._loss = loss / math_ops.cast(current_batch_size, dtypes.float32)
+                        self._grads = tf.gradients(self._loss, train_params, self.training_weight, colocate_gradients_with_ops=True)
 
-                    if len(train_params) > 0:
-                        self._update = self.opt.apply_gradients(zip(self._grads[:len(train_params)], train_params),
-                                                                global_step=self.global_step)
-                    else:
-                        self._update = tf.assign_add(self.global_step, 1)
+                        if len(train_params) > 0:
+                            self._update = self.opt.apply_gradients(zip(self._grads[:len(train_params)], train_params),
+                                                                    global_step=self.global_step)
+                        else:
+                            self._update = tf.assign_add(self.global_step, 1)
 
         self.saver = tf.train.Saver(tf.all_variables(), max_to_keep=1)
 
@@ -101,16 +102,15 @@ class QAModel:
         return self.__class__.__name__
 
     def _comp_f(self):
-        embed = tf.get_variable("E_words", [self._vocab_size, self._size])
-        embedded = tf.nn.embedding_lookup(embed, self._context)
+        with tf.device("/cpu:0"):
+            embed = tf.get_variable("E_words", [self._vocab_size, self._size])
+            embedded = tf.nn.embedding_lookup(embed, self._context)
 
-        max_position = tf.segment_max(self._positions, self._position_context)
-        min_position = tf.segment_min(self._positions, self._position_context)
-
-        e_inputs = [tf.reshape(e, [-1, self._size]) for e in tf.split(1, self._max_length, embedded)]
-        batch_size = tf.gather(tf.shape(self._context), [0])
-
-        with tf.device(self._device2):
+            max_position = tf.segment_max(self._positions, self._position_context)
+            min_position = tf.segment_min(self._positions, self._position_context)
+            e_inputs = [tf.reshape(e, [-1, self._size]) for e in tf.split(1, self._max_length, embedded)]
+            batch_size = tf.gather(tf.shape(self._context), [0])
+        with tf.device(self._device1):
             with vs.variable_scope("forward"):
                 init_state = tf.get_variable("init_state", [self._size])
                 init_state = tf.reshape(tf.tile(init_state, batch_size), [-1,self._size])
@@ -122,7 +122,7 @@ class QAModel:
                 # gather respective queries via their positions (with offset of context_index*(max_length+1))
                 out_fw = tf.gather(outs_fw, self._positions + self._position_context*(self._max_length+1))
 
-        with tf.device(self._device1):
+        with tf.device(self._device2):
             #use other device for backward rnn
             with vs.variable_scope("backward"):
                 init_state = tf.get_variable("init_state", [self._size])
@@ -133,18 +133,17 @@ class QAModel:
                 outs_bw.insert(0, init_state)
                 # reshape to all possible queries for all sequences. Dim[0]=batch_size*max_length+1.
                 # "+1" because we include the initial state
-                outs_bw = tf.reshape(tf.concat(1, tf.concat(1, outs_bw)), [-1, self._size])
+                outs_bw = tf.reshape(tf.concat(1, outs_bw), [-1, self._size])
                 # gather respective queries via their lengths-positions-1 (because reversed sequence)
                 #  (with offset of context_index*(max_length+1))
                 lengths_aligned = tf.gather(self._length, self._position_context)
                 out_bw = tf.gather(outs_bw, (lengths_aligned - self._positions - 1) +
                                    self._position_context*(self._max_length+1))
-
-        # form query from forward and backward compositions
-        query = tf.contrib.layers.fully_connected(tf.concat(1, [out_fw, out_bw]), self._size,
+            # form query from forward and backward compositions
+            query = tf.contrib.layers.fully_connected(tf.concat(1, [out_fw, out_bw]), self._size,
                                                   activation_fn=tf.tanh, weight_init=None)
         # add supporting evidence to this query
-        return self._supporting_evidence(query)
+        return query
 
     def _supporting_evidence(self, query):
         if self._num_queries == 0:
@@ -153,9 +152,10 @@ class QAModel:
             with vs.variable_scope("supporting"):
                 query, supp_queries = tf.dynamic_partition(query, self._query_partition, 2)
                 num_queries = tf.shape(query)[0]
-
-                _, supp_answers = tf.dynamic_partition(self._answer_input, self._query_partition, 2)
-                supp_answers = tf.tanh(tf.nn.embedding_lookup(self.candidates, supp_answers))
+                
+                with tf.device("/cpu:0"):
+                  _, supp_answers = tf.dynamic_partition(self._answer_input, self._query_partition, 2)
+                  supp_answers = tf.tanh(tf.nn.embedding_lookup(self.candidates, supp_answers))
 
                 self.evidence_weights = []
                 current_answer = query
@@ -184,9 +184,9 @@ class QAModel:
                         #                                                  bias_init=None)
                         answer_weight = tf.contrib.layers.fully_connected(summed_scores, 1,
                                                                           activation_fn=tf.nn.sigmoid, weight_init=None,
-                                                                          bias_init=tf.constant_initializer(-1.0))
+                                                                          bias_init=tf.constant_initializer(0.0))
 
-                        current_answer = weighted_answers * answer_weight + current_answer
+                        current_answer = weighted_answers * answer_weight + (1.0-answer_weight) * current_answer
 
                         if i < self._num_queries - 1:
                             c = tf.contrib.layers.fully_connected(tf.concat(1, [current_query, weighted_answers]), self._size,
@@ -213,12 +213,10 @@ class QAModel:
 
     def _init_inputs(self):
         #General
-        with tf.device(self._device0):
+        with tf.device("/cpu:0"):
             self._context = tf.placeholder(tf.int64, shape=[None, self._max_length], name="context")
             self._answer_candidates = tf.placeholder(tf.int64, shape=[None, None], name="candidates")
             self._answer_input = tf.placeholder(tf.int64, shape=[None], name="answer")
-
-        with tf.device(self._device3):
             self._positions = tf.placeholder(tf.int64, shape=[None], name="answer_position")
             self._position_context = tf.placeholder(tf.int64, shape=[None], name="answer_position_context")
             self._candidate_mask = tf.placeholder(tf.float32, shape=[None, None], name="candidate_mask")
@@ -285,7 +283,7 @@ class QAModel:
         query_batch_idx = self._batch_idx
         self._batch_idx += 1
 
-        if supporting_evidence is not None:
+        if supporting_evidence is not None and self._num_queries > 0:
             for supp_context, supp_positions in supporting_evidence:
                 if supp_context is None:
                     #supporting context is the same as query context, only add corresponding positions
@@ -305,7 +303,7 @@ class QAModel:
             self._query_idx += 1
 
     def _add_example(self, context, positions, supporting_evidence=None, is_query=True):
-        self._add_example_and_negs(context, positions, [[]]*len(positions), supporting_evidence, is_query)
+        self._add_example_and_negs(context, positions, None, supporting_evidence, is_query)
 
     def _finish_adding_examples(self):
         max_cands = max((len(x) for x in self._answer_cands))
