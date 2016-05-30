@@ -170,9 +170,9 @@ class QAModel:
                                 any(vs.get_variable_scope().name in v.name for v in tf.trainable_variables())
                         aligned_queries = tf.gather(current_query, self._support_ids)  # align query with respective supp_queries
 
-                        scores = tf_util.batch_dot(aligned_queries, supp_queries)
+                        scores = tf_util.batch_dot(aligned_queries, self.__l2_normalize(supp_queries))
                         self.evidence_weights.append(scores)
-                        e_scores = tf.exp(scores - tf.tile(tf.reduce_max(scores, [0], keep_dims=True), tf.shape(scores)))
+                        e_scores = tf.exp(scores - tf.reduce_max(scores, [0], keep_dims=True))
                         norm = tf.unsorted_segment_sum(e_scores, self._support_ids, num_queries) + 0.00001 # for zero norms
                         # this is basically the dot product between query and weighted supp_queries
                         norm = tf.reshape(norm, [-1, 1])
@@ -181,7 +181,7 @@ class QAModel:
                         norm = tf.tile(norm, [1, self._size])
 
                         e_scores = tf.tile(tf.reshape(e_scores, [-1, 1]), [1, self._size])
-                        weighted_answers = tf.unsorted_segment_sum(e_scores * supp_answers, self._support_ids, num_queries) / norm
+                        weighted_answers = tf.unsorted_segment_sum(scores * supp_answers, self._support_ids, num_queries)
                         #answer_weight = tf.contrib.layers.fully_connected(tf.concat(1, [weighted_queries,query]), self._size,
                         #                                                  activation_fn=tf.nn.relu, weight_init=None,
                         #                                                  bias_init=None)
