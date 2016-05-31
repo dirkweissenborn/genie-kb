@@ -183,8 +183,10 @@ class QAModel:
                         summed_scores = tf.unsorted_segment_sum(tf.reshape(e_scores * scores, [-1,1]),
                                                                 self._support_ids, num_queries) / norm
                         norm = tf.tile(norm, [1, self._size])
-                        scores = tf.tile(tf.reshape(scores, [-1, 1]), [1, self._size])
-                        weighted_answers = tf.unsorted_segment_sum(scores * supp_answers, self._support_ids, num_queries)
+                        #scores = tf.tile(tf.reshape(scores, [-1, 1]), [1, self._size])
+                        e_scores = tf.tile(tf.reshape(e_scores, [-1, 1]), [1, self._size])
+                        weighted_answers = tf.unsorted_segment_sum(e_scores * supp_answers,
+                                                                   self._support_ids, num_queries) / norm
                         #answer_weight = tf.contrib.layers.fully_connected(tf.concat(1, [weighted_queries,query]), self._size,
                         #                                                  activation_fn=tf.nn.relu, weight_init=None,
                         #                                                  bias_init=None)
@@ -196,7 +198,6 @@ class QAModel:
                         current_answer = weighted_answers * answer_weight + (1.0-answer_weight) * current_answer
 
                         if i < self._num_queries - 1:
-                            e_scores = tf.tile(tf.reshape(e_scores, [-1, 1]), [1, self._size])
                             weighted_queries = tf.unsorted_segment_sum(e_scores * supp_queries, self._support_ids, num_queries) / norm
 
                             c = tf.contrib.layers.fully_connected(tf.concat(1, [current_query, weighted_answers]), self._size,
