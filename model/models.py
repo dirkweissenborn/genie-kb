@@ -69,12 +69,15 @@ class QAModel:
                         self._update = tf.assign_add(self.global_step, 1)
         self.saver = tf.train.Saver(tf.all_variables(), max_to_keep=1)
 
-    def __l2_normalize(self, x, epsilon=1e-12, name=None):
+    def __l2_normalize(self, x, factor=1.0, epsilon=1e-12, name=None):
         with ops.op_scope([x], name, "l2_normalize") as name:
             x = ops.convert_to_tensor(x, name="x")
             square_sum = tf.reduce_sum(tf.square(x), [1], keep_dims=True)
             # we change this to min (1, 1/norm)
-            x_inv_norm = tf.minimum(1.0, tf.rsqrt(math_ops.maximum(square_sum, epsilon)))
+            x_inv_norm = tf.rsqrt(math_ops.maximum(square_sum, epsilon))
+            if factor != 1.0:
+                x_inv_norm = x_inv_norm * factor
+            x_inv_norm = tf.minimum(1.0, x_inv_norm)
             return tf.mul(x, x_inv_norm, name=name)
 
 
@@ -145,7 +148,8 @@ class QAModel:
                 out_fw = tf.gather(outs_fw, self._ends + self._span_context * (self._max_length + 1))
             # form query from forward and backward compositions
             query = tf.contrib.layers.fully_connected(tf.concat(1, [out_fw, out_bw]), self._size,
-                                                      activation_fn=tf.nn.tanh, weight_init=None)
+                                                      activation_fn=None, weight_init=None)
+            query = self.__l2_normalize(query, float(self._size))
         # add supporting evidence to this query
         return query
 
