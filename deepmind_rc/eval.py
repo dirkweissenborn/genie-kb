@@ -28,6 +28,7 @@ def eval_dataset(sess, model, sampler, verbose=False):
 
     acc = tp / total
     mrr = rr / total
-
+    if verbose:
+        print("")
     return acc, mrr
 

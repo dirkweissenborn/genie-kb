@@ -24,7 +24,7 @@ tf.app.flags.DEFINE_integer("batch_size", 25, "Number of examples in each batch 
 tf.app.flags.DEFINE_integer("max_iterations", -1, "Maximum number of batches during training. -1 means until convergence")
 tf.app.flags.DEFINE_integer("ckpt_its", 1000, "Number of iterations until running checkpoint. Negative means after every epoch.")
 tf.app.flags.DEFINE_integer("random_seed", 1234, "Seed for rng.")
-tf.app.flags.DEFINE_integer("subsample_validation", 2000, "number of facts to evaluate during validation.")
+tf.app.flags.DEFINE_integer("subsample_validation", 10000, "number of facts to evaluate during validation.")
 tf.app.flags.DEFINE_integer("num_consecutive_queries", 1, "number of consecutive queries to supporting evidence.")
 #tf.app.flags.DEFINE_boolean("support", False, "Use supporting evidence.")
 tf.app.flags.DEFINE_string("devices", "/cpu:0", "Use this device.")

@@ -34,9 +34,9 @@ class QAModel:
                 with tf.device("/cpu:0"):
                     self.candidates = tf.get_variable("E_candidate", [vocab_size, self._size])
                     answer, _ = tf.dynamic_partition(self._answer_input, self._query_partition, 2)
-                    lookup_individual = self.__l2_normalize(tf.nn.embedding_lookup(self.candidates, answer))
+                    lookup_individual = tf.tanh(tf.nn.embedding_lookup(self.candidates, answer))
                     cands,_ = tf.dynamic_partition(self._answer_candidates, self._query_partition, 2)
-                    lookup = self.__l2_normalize(tf.nn.embedding_lookup(self.candidates, cands))
+                    lookup = tf.tanh(tf.nn.embedding_lookup(self.candidates, cands))
 
                 self.query = self._comp_f()
                 self.query = self._supporting_evidence(self.query)
@@ -149,7 +149,7 @@ class QAModel:
             # form query from forward and backward compositions
             query = tf.contrib.layers.fully_connected(tf.concat(1, [out_fw, out_bw]), self._size,
                                                       activation_fn=None, weight_init=None)
-            query = self.__l2_normalize(query, float(self._size))
+            query = tf.tanh(query)#, float(self._size))
         # add supporting evidence to this query
         return query
 
@@ -163,7 +163,7 @@ class QAModel:
                 
                 with tf.device("/cpu:0"):
                   _, supp_answers = tf.dynamic_partition(self._answer_input, self._query_partition, 2)
-                  supp_answers = self.__l2_normalize(tf.nn.embedding_lookup(self.candidates, supp_answers))
+                  supp_answers = tf.tanh(tf.nn.embedding_lookup(self.candidates, supp_answers))
 
                 self.evidence_weights = []
                 current_answer = query
@@ -174,16 +174,15 @@ class QAModel:
                                 any(vs.get_variable_scope().name in v.name for v in tf.trainable_variables())
                         aligned_queries = tf.gather(current_query, self._support_ids)  # align query with respective supp_queries
 
-                        scores = tf_util.batch_dot(aligned_queries, self.__l2_normalize(supp_queries))
+                        scores = tf_util.batch_dot(aligned_queries, supp_queries)
                         self.evidence_weights.append(scores)
                         e_scores = tf.exp(scores - tf.reduce_max(scores, [0], keep_dims=True))
                         norm = tf.unsorted_segment_sum(e_scores, self._support_ids, num_queries) + 0.00001 # for zero norms
-                        # this is basically the dot product between query and weighted supp_queries
                         norm = tf.reshape(norm, [-1, 1])
+                        # this is basically the dot product between query and weighted supp_queries
                         summed_scores = tf.unsorted_segment_sum(tf.reshape(e_scores * scores, [-1,1]),
                                                                 self._support_ids, num_queries) / norm
                         norm = tf.tile(norm, [1, self._size])
-
                         scores = tf.tile(tf.reshape(scores, [-1, 1]), [1, self._size])
                         weighted_answers = tf.unsorted_segment_sum(scores * supp_answers, self._support_ids, num_queries)
                         #answer_weight = tf.contrib.layers.fully_connected(tf.concat(1, [weighted_queries,query]), self._size,
