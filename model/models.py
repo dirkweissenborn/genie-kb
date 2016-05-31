@@ -300,6 +300,7 @@ class QAModel:
                 if supp_context is None:
                     #supporting context is the same as query context, only add corresponding positions
                     self._s.extend(supp_start)
+                    self._e.extend(supp_end)
                     for i, start in enumerate(supp_start):
                         self._span_ctxt.append(query_batch_idx)
                         self._answer_in.append(supp_answers[i])
