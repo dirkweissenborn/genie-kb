@@ -49,7 +49,8 @@ class BatchSampler:
             while ctxt[k] != splitter:
                 k -= 1
             # < k: supporting evidence; >k: query
-            start, end = self.kb.spans(self.which_set, self.todo[i])
+            # we switch start and end here, because entities are anonymized -> consider only outer context
+            end, start = self.kb.spans(self.which_set, self.todo[i])
             answer = self.kb.answers(self.which_set, self.todo[i])
             contexts.append(ctxt)
             starts.append([start[-1]])  # span start

@@ -34,9 +34,9 @@ class QAModel:
                 with tf.device("/cpu:0"):
                     self.candidates = tf.get_variable("E_candidate", [vocab_size, self._size])
                     answer, _ = tf.dynamic_partition(self._answer_input, self._query_partition, 2)
-                    lookup_individual = tf.tanh(tf.nn.embedding_lookup(self.candidates, answer))
+                    lookup_individual = tf.nn.embedding_lookup(self.candidates, answer)
                     cands,_ = tf.dynamic_partition(self._answer_candidates, self._query_partition, 2)
-                    lookup = tf.tanh(tf.nn.embedding_lookup(self.candidates, cands))
+                    lookup = tf.nn.embedding_lookup(self.candidates, cands)
 
                 self.query = self._comp_f()
                 self.query = self._supporting_evidence(self.query)
@@ -49,7 +49,7 @@ class QAModel:
                     self.learning_rate_decay_op = self.learning_rate.assign(self.learning_rate * 0.9)
                     self.global_step = tf.Variable(0, trainable=False, name="step")
 
-                    self.opt = tf.train.AdamOptimizer(self.learning_rate, beta1=0.0)
+                    self.opt = tf.train.AdamOptimizer(self.learning_rate) #, beta1=0.0)
 
                     current_batch_size = tf.gather(tf.shape(self._scores_with_negs), [0])
                     labels = tf.constant([0], tf.int64)
@@ -147,9 +147,9 @@ class QAModel:
                 # gather respective queries via their positions (with offset of context_index*(max_length+1))
                 out_fw = tf.gather(outs_fw, self._ends + self._span_context * (self._max_length + 1))
             # form query from forward and backward compositions
-            query = tf.contrib.layers.fully_connected(tf.concat(1, [out_fw, out_bw]), self._size,
-                                                      activation_fn=None, weight_init=None)
-            query = tf.tanh(query)#, float(self._size))
+            #query = tf.contrib.layers.fully_connected(tf.concat(1, [out_fw, out_bw]), self._size,
+             #                                         activation_fn=None, weight_init=None)
+            query = out_fw + out_bw #tf.tanh(query)#, float(self._size))
         # add supporting evidence to this query
         return query
 
@@ -163,7 +163,7 @@ class QAModel:
                 
                 with tf.device("/cpu:0"):
                   _, supp_answers = tf.dynamic_partition(self._answer_input, self._query_partition, 2)
-                  supp_answers = tf.tanh(tf.nn.embedding_lookup(self.candidates, supp_answers))
+                  supp_answers = tf.nn.embedding_lookup(self.candidates, supp_answers)
 
                 self.evidence_weights = []
                 current_answer = query
@@ -187,6 +187,7 @@ class QAModel:
                         e_scores = tf.tile(tf.reshape(e_scores, [-1, 1]), [1, self._size])
                         weighted_answers = tf.unsorted_segment_sum(e_scores * supp_answers,
                                                                    self._support_ids, num_queries) / norm
+                        weighted_answers = tf.tanh(weighted_answers)
                         #answer_weight = tf.contrib.layers.fully_connected(tf.concat(1, [weighted_queries,query]), self._size,
                         #                                                  activation_fn=tf.nn.relu, weight_init=None,
                         #                                                  bias_init=None)
