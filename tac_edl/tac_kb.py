@@ -4,10 +4,13 @@ import sys
 from multiprocessing.dummy import Pool
 import xml.etree.ElementTree
 import re
+from spacy.en import English
 
 dir = sys.argv[1]
 print("Read TAC KB from %s" % dir)
 out = sys.argv[2]
+
+nlp = English(parser=False)
 
 pool = Pool()
 kb = FactKB()
@@ -28,7 +31,7 @@ def add2kb(fn):
             for fact in facts.findall('fact'):
                 #<fact name="countryofbirth"><link entity_id="E0145816">England</link></fact>
                 slot = fact.get("name")
-                text = fact.text.split()
+                text = [x.text for x in nlp(fact.text) if not x.text.isspace()]
                 clean_fact = e_name + [slot]
                 spans = [(0, len(e_name))]
                 entities = [e_id]

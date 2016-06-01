@@ -95,12 +95,12 @@ class KB:
 
     def answers(self, i, dataset="train"):
         offset = self.__span_offsets[dataset][i]
-        end = self.__span_offsets[dataset][i + 1] if i + 1 < len(self.__span_offsets[typ]) else -1
+        end = self.__span_offsets[dataset][i + 1] if i + 1 < len(self.__span_offsets[dataset]) else -1
         if self.__answers:
             return self.__answers[dataset][offset:end]
         else:
             # if now answers provided used starts as answers
-            return [self.context(dataset, i)[p] for p in self.__starts[typ][offset * 2:end * 2]]
+            return [self.context(dataset, i)[p] for p in self.__starts[dataset][offset * 2:end * 2]]
 
     def id(self, word, fallback=-1):
         return self.__ids.get(word, fallback)
