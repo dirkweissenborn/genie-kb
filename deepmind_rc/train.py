@@ -58,7 +58,7 @@ with tf.Session(config=config) as sess:
     max_length = kb.max_context_length
     devices = FLAGS.devices.split(",")
     m = QAModel(FLAGS.size, FLAGS.batch_size, len(kb.vocab), max_length,
-                learning_rate=FLAGS.learning_rate, num_consecutive_queries=1,
+                learning_rate=FLAGS.learning_rate, max_queries=1,
                 devices=devices)
 
     print("Created model: " + m.name())
@@ -74,7 +74,6 @@ with tf.Session(config=config) as sess:
                          filter(lambda x: not x.endswith(".meta") and "ckpt" in x, os.listdir(train_dir))),
                      key=os.path.getctime)
         print("Loading from checkpoint " + newest)
-        best_path.append(newest)
         m.saver.restore(sess, newest)
     else:
         if not os.path.exists(train_dir):

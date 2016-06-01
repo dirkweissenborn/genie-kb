@@ -15,7 +15,7 @@ import functools
 class QAModel:
 
     def __init__(self, size, batch_size, vocab_size, max_length, is_train=True, learning_rate=1e-2,
-                 composition="GRU", num_consecutive_queries=0, devices=None):
+                 composition="GRU", max_queries=0, devices=None):
         self._vocab_size = vocab_size
         self._max_length = max_length
         self._size = size
@@ -23,7 +23,7 @@ class QAModel:
         self._is_train = is_train
         self._init = model.default_init()
         self._composition = composition
-        self._num_queries = num_consecutive_queries
+        self._max_queries = max_queries
         self._device0 = devices[0] if devices is not None else "/cpu:0"
         self._device1 = devices[1 % len(devices)] if devices is not None else "/cpu:0"
         self._device2 = devices[2 % len(devices)] if devices is not None else "/cpu:0"
@@ -33,11 +33,12 @@ class QAModel:
                 self._init_inputs()
                 with tf.device("/cpu:0"):
                     self.candidates = tf.get_variable("E_candidate", [vocab_size, self._size])
+                    self.embeddings = tf.get_variable("E_words", [vocab_size, self._size])
                     answer, _ = tf.dynamic_partition(self._answer_input, self._query_partition, 2)
                     lookup_individual = tf.nn.embedding_lookup(self.candidates, answer)
                     cands,_ = tf.dynamic_partition(self._answer_candidates, self._query_partition, 2)
                     lookup = tf.nn.embedding_lookup(self.candidates, cands)
-
+                self._num_queries = tf.Variable(self._max_queries, trainable=False, name="num_queries")
                 self.query = self._comp_f()
                 self.query = self._supporting_evidence(self.query)
                 self._score = tf_util.batch_dot(lookup_individual, self.query)
@@ -111,8 +112,7 @@ class QAModel:
 
     def _comp_f(self):
         with tf.device("/cpu:0"):
-            embed = tf.get_variable("E_words", [self._vocab_size, self._size])
-            embedded = tf.nn.embedding_lookup(embed, self._context)
+            embedded = tf.nn.embedding_lookup(self.embeddings, self._context)
             batch_size = tf.gather(tf.shape(self._context), [0])
 
         with tf.device(self._device1):
@@ -154,7 +154,7 @@ class QAModel:
         return query
 
     def _supporting_evidence(self, query):
-        if self._num_queries == 0:
+        if self._max_queries == 0:
             return query
         else:
             with vs.variable_scope("supporting"):
@@ -168,7 +168,7 @@ class QAModel:
                 self.evidence_weights = []
                 current_answer = query
                 current_query = query
-                for i in range(self._num_queries):
+                for i in range(self._max_queries):
                     with vs.variable_scope("evidence"):
                         vs.get_variable_scope()._reuse = \
                                 any(vs.get_variable_scope().name in v.name for v in tf.trainable_variables())
@@ -196,18 +196,24 @@ class QAModel:
                                                                           weight_init=tf.constant_initializer(0.0),
                                                                           bias_init=tf.constant_initializer(0.0))
 
-                        current_answer = weighted_answers * answer_weight + (1.0-answer_weight) * current_answer
+                        new_answer = weighted_answers * answer_weight + (1.0-answer_weight) * current_answer
+                        current_answer = tf.cond(tf.greater(self._num_queries, i),
+                                                 lambda: new_answer,
+                                                 lambda: current_query)
 
-                        if i < self._num_queries - 1:
+                        if i < self._max_queries - 1:
+                            answer_words = tf.nn.embedding_lookup(self.embeddings, supp_answers)
+                            weighted_answer_words = tf.unsorted_segment_sum(e_scores * answer_words,
+                                                                            self._support_ids, num_queries) / norm
+
                             weighted_queries = tf.unsorted_segment_sum(e_scores * supp_queries, self._support_ids, num_queries) / norm
-
-                            c = tf.contrib.layers.fully_connected(tf.concat(1, [current_query, weighted_answers]), self._size,
+                            c = tf.contrib.layers.fully_connected(tf.concat(1, [current_query, weighted_answer_words]), self._size,
                                                                   activation_fn=tf.tanh, weight_init=None, bias_init=None)
 
                             gate = tf.contrib.layers.fully_connected(tf.concat(1, [current_query, weighted_queries]),
                                                                      self._size,
                                                                      activation_fn=tf.sigmoid, weight_init=None,
-                                                                     bias_init=tf.constant_initializer(0))
+                                                                     bias_init=tf.constant_initializer(1))
                             current_query = gate * current_query + (1-gate) * c
 
             tf.get_variable_scope().reuse_variables()
@@ -301,7 +307,7 @@ class QAModel:
         query_batch_idx = self._batch_idx
         self._batch_idx += 1
 
-        if supporting_evidence is not None and self._num_queries > 0:
+        if supporting_evidence is not None and self._max_queries > 0:
             for supp_context, supp_start, supp_end, supp_answers in supporting_evidence:
                 if supp_context is None:
                     #supporting context is the same as query context, only add corresponding positions
@@ -430,7 +436,7 @@ class QAModel:
 
 
 def test_model():
-    model = QAModel(10, 4, 5, 5, num_consecutive_queries=1)
+    model = QAModel(10, 4, 5, 5, max_queries=1)
     # 3 contexts (of length 3) with queries at 2/1/2 (totaling 5) positions
     # and respective negative candidates for each position
     contexts =       [[4, 1, 4]       , [1, 4, 0], [0, 4, 4]]  # 4 => placeholder for prediction position
