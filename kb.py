@@ -50,8 +50,11 @@ class KB:
                     self.__answers[dataset].append(self.__add_to_vocab(answer))
             self.__max_context_length = max(self.__max_context_length, len(context))
             self.__max_span_length = max(self.__max_span_length, len(spans))
+
+            i = len(self.__context_offsets[dataset])-1
         finally:
             self.__lock.release()
+        return i
 
     def __add_to_vocab(self, key):
         if key not in self.__ids:
@@ -61,52 +64,58 @@ class KB:
 
     def save(self, file):
         with open(file, 'wb') as f:
-            pickle.dump([self.__contexts, self.__starts, self.__ends, self.__answers, self.__vocab, self.__ids,
-                         self.__context_offsets, self.__span_offsets,
-                         self.__max_context_length, self.__max_span_length], f)
+            pickle.dump(self.values(), f)
 
     def load(self, file):
         with open(file, 'rb') as f:
-            [self.__contexts, self.__starts, self.__ends, self.__answers, self.__vocab, self.__ids,
-             self.__context_offsets, self.__span_offsets,
-             self.__max_context_length, self.__max_span_length] = pickle.load(f)
+            self.load_values(pickle.load(f))
 
-    def context(self, typ, i):
-        offset = self.__context_offsets[typ][i]
-        end = self.__context_offsets[typ][i+1] if i+1<len(self.__context_offsets[typ]) else -1
-        return self.__contexts[typ][offset:end]
+    def load_values(self, values):
+        [self.__contexts, self.__starts, self.__ends, self.__answers, self.__vocab, self.__ids,
+         self.__context_offsets, self.__span_offsets,
+         self.__max_context_length, self.__max_span_length] = values
+
+    def values(self):
+        return [self.__contexts, self.__starts, self.__ends, self.__answers, self.__vocab, self.__ids,
+         self.__context_offsets, self.__span_offsets,
+         self.__max_context_length, self.__max_span_length]
+
+    def context(self, i, dataset="train"):
+        offset = self.__context_offsets[dataset][i]
+        end = self.__context_offsets[dataset][i + 1] if i + 1 < len(self.__context_offsets[dataset]) else -1
+        return self.__contexts[dataset][offset:end]
 
     def num_contexts(self, typ):
         return len(self.__context_offsets.get(typ, []))
 
-    def spans(self, typ, i):
-        offset = self.__span_offsets[typ][i]
-        end = self.__span_offsets[typ][i + 1] if i + 1 < len(self.__span_offsets[typ]) else -1
-        return self.__starts[typ][offset:end], self.__ends[typ][offset:end]
+    def spans(self, i, dataset="train"):
+        offset = self.__span_offsets[dataset][i]
+        end = self.__span_offsets[dataset][i + 1] if i + 1 < len(self.__span_offsets[dataset]) else -1
+        return self.__starts[dataset][offset:end], self.__ends[dataset][offset:end]
 
-    def answers(self, typ, i):
-        offset = self.__span_offsets[typ][i]
-        end = self.__span_offsets[typ][i + 1] if i + 1 < len(self.__span_offsets[typ]) else -1
+    def answers(self, i, dataset="train"):
+        offset = self.__span_offsets[dataset][i]
+        end = self.__span_offsets[dataset][i + 1] if i + 1 < len(self.__span_offsets[typ]) else -1
         if self.__answers:
-            return self.__answers[typ][offset:end]
+            return self.__answers[dataset][offset:end]
         else:
             # if now answers provided used starts as answers
-            return [self.context(typ, i)[p] for p in self.__starts[typ][offset * 2:end * 2]]
+            return [self.context(dataset, i)[p] for p in self.__starts[typ][offset * 2:end * 2]]
 
     def id(self, word, fallback=-1):
         return self.__ids.get(word, fallback)
 
-    def iter_contexts(self, typ):
-        for i in range(len(self.__context_offsets[typ])):
-            yield self.context(typ, i)
+    def iter_contexts(self, dataset="train"):
+        for i in range(len(self.__context_offsets[dataset])):
+            yield self.context(dataset, i)
 
-    def iter_spans(self, typ):
-        for i in range(len(self.__span_offsets[typ])):
-            yield self.spans(typ, i)
+    def iter_spans(self, dataset="train"):
+        for i in range(len(self.__span_offsets[dataset])):
+            yield self.spans(dataset, i)
 
-    def iter_answers(self, typ):
-        for i in range(len(self.__span_offsets[typ])):
-            yield self.answers(typ, i)
+    def iter_answers(self, dataset="train"):
+        for i in range(len(self.__span_offsets[dataset])):
+            yield self.answers(dataset, i)
 
     @property
     def max_context_length(self):
@@ -119,3 +128,45 @@ class KB:
     @property
     def vocab(self):
         return self.__vocab
+
+
+class FactKB:
+
+    def __init__(self):
+        self.__kb = KB()
+        self.__entity_vocab = []
+        self.__entity_ids = dict()
+        self.__entity_ctxt = []
+        self.__entity_ctxt_span = []
+
+    def add(self, fact, entity_spans, entities=None):
+        if not isinstance(fact, list):
+            fact = fact.split()
+        assert entities is None or len(entities) == len(entity_spans), "Need to provide entity names for all spans."
+        entities = ['_'.join(fact[span[0]:span[1]]) for span in entity_spans] if entities is None else entities
+        fact_id = self.__kb.add(fact, entity_spans, entities)
+
+        for e, (start, end) in zip(entities, entity_spans):
+            if e not in self.__entity_ids:
+                self.__entity_ids[e] = len(self.__entity_vocab)
+                self.__entity_vocab.append(e)
+                self.__entity_ctxt.append([])
+                self.__entity_ctxt_span.append([])
+            id = self.__entity_ids[e]
+            self.__entity_ctxt[id].append(fact_id)
+            self.__entity_ctxt_span[id].append((start, end))
+
+    def save(self, file):
+        with open(file, 'wb') as f:
+            pickle.dump(self.values(), f)
+
+    def load(self, file):
+        with open(file, 'rb') as f:
+            self.load_values(pickle.load(f))
+
+    def load_values(self, values):
+        [self.__entity_vocab, self.__entity_ids, self.__entity_ctxt, self.__entity_ctxt_span] = values[:4]
+        self.__kb.load_values(values[4:])
+
+    def values(self):
+        return [self.__entity_vocab, self.__entity_ids, self.__entity_ctxt, self.__entity_ctxt_span] + self.__kb.values()

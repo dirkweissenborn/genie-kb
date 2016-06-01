@@ -44,14 +44,14 @@ class BatchSampler:
         contexts, starts, ends, answers, neg_candidates, supporting_evidence = [], [], [], [], [], []
         splitter = self.kb.id("||")
         for i in range(self.batch_size):
-            ctxt = self.kb.context(self.which_set, self.todo[i])
+            ctxt = self.kb.context(self.todo[i], self.which_set)
             k = len(ctxt)-1
             while ctxt[k] != splitter:
                 k -= 1
             # < k: supporting evidence; >k: query
             # we switch start and end here, because entities are anonymized -> consider only outer context
-            end, start = self.kb.spans(self.which_set, self.todo[i])
-            answer = self.kb.answers(self.which_set, self.todo[i])
+            end, start = self.kb.spans(self.todo[i], self.which_set)
+            answer = self.kb.answers(self.todo[i], self.which_set)
             contexts.append(ctxt)
             starts.append([start[-1]])  # span start
             ends.append([end[-1]])  # span end
