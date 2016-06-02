@@ -132,29 +132,43 @@ class KB:
 
 class FactKB:
 
-    def __init__(self):
-        self.__kb = KB()
+    def __init__(self, kb=None):
+        self.__kb = KB() if kb is None else kb
         self.__entity_vocab = []
         self.__entity_ids = dict()
-        self.__entity_ctxt = []
-        self.__entity_ctxt_span = []
+        self.__entity_ctxt = dict()
+        self.__entity_ctxt_span = dict()
+        self.__facts = dict()
+        self.__lock = Lock()
 
-    def add(self, fact, entity_spans, entities=None):
-        if not isinstance(fact, list):
-            fact = fact.split()
-        assert entities is None or len(entities) == len(entity_spans), "Need to provide entity names for all spans."
-        entities = ['_'.join(fact[span[0]:span[1]]) for span in entity_spans] if entities is None else entities
-        fact_id = self.__kb.add(fact, entity_spans, entities)
+    def add(self, fact, entity_spans, entities=None, dataset="train"):
+        self.__lock.acquire()
+        try:
+            if not isinstance(fact, list):
+                fact = fact.split()
+            assert entities is None or len(entities) == len(entity_spans), "Need to provide entity names for all spans."
+            entities = ['_'.join(fact[span[0]:span[1]]) for span in entity_spans] if entities is None else entities
+            fact_id = self.__kb.add(fact, entity_spans, entities, dataset)
 
-        for e, (start, end) in zip(entities, entity_spans):
-            if e not in self.__entity_ids:
-                self.__entity_ids[e] = len(self.__entity_vocab)
-                self.__entity_vocab.append(e)
-                self.__entity_ctxt.append([])
-                self.__entity_ctxt_span.append([])
-            id = self.__entity_ids[e]
-            self.__entity_ctxt[id].append(fact_id)
-            self.__entity_ctxt_span[id].append((start, end))
+            if dataset not in self.__facts:
+                self.__facts[dataset] = []
+                self.__entity_ctxt[dataset] = [[] for _ in self.__entity_ids]
+                self.__entity_ctxt_span[dataset] = [[] for _ in self.__entity_ids]
+
+            for e, (start, end) in zip(entities, entity_spans):
+                if e not in self.__entity_ids:
+                    self.__entity_ids[e] = len(self.__entity_vocab)
+                    self.__entity_vocab.append(e)
+                    for ds in self.__entity_ctxt:
+                        self.__entity_ctxt[ds].append([])
+                        self.__entity_ctxt_span[ds].append([])
+                id = self.__entity_ids[e]
+                self.__entity_ctxt[dataset][id].append(fact_id)
+                self.__entity_ctxt_span[dataset][id].append((start, end))
+                self.__facts[dataset].append(fact_id)
+        finally:
+            self.__lock.release()
+        return fact_id
 
     def save(self, file):
         with open(file, 'wb') as f:
@@ -170,3 +184,26 @@ class FactKB:
 
     def values(self):
         return [self.__entity_vocab, self.__entity_ids, self.__entity_ctxt, self.__entity_ctxt_span] + self.__kb.values()
+
+    def facts_about(self, entity, dataset):
+        id = entity
+        if isinstance(id, str):
+            id = self.__entity_ids.get(entity)
+        if id is None:
+            return []
+        else:
+            return self.__entity_ctxt[dataset][id]
+
+    def fact_from_id(self, fact_id, dataset):
+        return self.__kb.context(fact_id, dataset)
+
+    @property
+    def kb(self):
+        return self.__kb
+
+    def id(self, entity, fallback=-1):
+        return self.__entity_ids.get(entity, fallback)
+
+    @property
+    def entity_vocab(self):
+        return self.__entity_vocab
