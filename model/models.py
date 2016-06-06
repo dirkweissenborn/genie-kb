@@ -39,7 +39,7 @@ class QAModel:
                     lookup_individual = tf.nn.embedding_lookup(self.candidates, answer)
                     cands,_ = tf.dynamic_partition(self._answer_candidates, self._query_partition, 2)
                     lookup = tf.nn.embedding_lookup(self.candidates, cands)
-                self._num_queries = tf.Variable(self._max_queries, trainable=False, name="num_queries")
+                self.num_queries = tf.Variable(self._max_queries, trainable=False, name="num_queries")
                 self.query = self._comp_f()
                 self.query = self._supporting_evidence(self.query)
                 self._score = tf_util.batch_dot(lookup_individual, self.query)
@@ -162,8 +162,8 @@ class QAModel:
                 num_queries = tf.shape(query)[0]
                 
                 with tf.device("/cpu:0"):
-                  _, supp_answers = tf.dynamic_partition(self._answer_input, self._query_partition, 2)
-                  supp_answers = tf.nn.embedding_lookup(self.candidates, supp_answers)
+                  _, supp_answer_ids = tf.dynamic_partition(self._answer_input, self._query_partition, 2)
+                  supp_answers = tf.nn.embedding_lookup(self.candidates, supp_answer_ids)
 
                 self.evidence_weights = []
                 current_answer = query
@@ -197,12 +197,12 @@ class QAModel:
                                                                           bias_init=tf.constant_initializer(0.0))
 
                         new_answer = weighted_answers * answer_weight + (1.0-answer_weight) * current_answer
-                        current_answer = tf.cond(tf.greater(self._num_queries, i),
+                        current_answer = tf.cond(tf.greater(self.num_queries, i),
                                                  lambda: new_answer,
                                                  lambda: current_query)
 
                         if i < self._max_queries - 1:
-                            answer_words = tf.nn.embedding_lookup(self.embeddings, supp_answers)
+                            answer_words = tf.nn.embedding_lookup(self.embeddings, supp_answer_ids)
                             weighted_answer_words = tf.unsorted_segment_sum(e_scores * answer_words,
                                                                             self._support_ids, num_queries) / norm
 
@@ -416,7 +416,7 @@ class QAModel:
 
 def test_model():
 
-    model = QAModel(10, 4, 5, 5, max_queries=1)
+    model = QAModel(10, 4, 5, 5, max_queries=2)
     # 3 contexts (of length 3) with queries at 2/1/2 (totaling 5) positions
     # and respective negative candidates for each position
     contexts =       [[0, 1, 2]       , [1, 2, 0], [0, 2, 1]]  # 4 => placeholder for prediction position
@@ -435,6 +435,8 @@ def test_model():
 
     with tf.Session() as sess:
         sess.run(tf.initialize_all_variables())
+        sess.run(model.num_queries.assign(1))
+        print(sess.run(model.num_queries))
         print("Test update ...")
         for i in range(10):
             print("Loss: %.3f" %
