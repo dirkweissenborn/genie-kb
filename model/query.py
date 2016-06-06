@@ -6,14 +6,16 @@ class ContextQueries:
         self.context = context
         self.queries = queries
         self.collaborative_support = collaborative_support
+        #supporting evidence for all queries
         self.supporting_evidence = supporting_evidence
 
 
 class ContextQuery:
 
-    def __init__(self, context, start, end, answer, neg_candidates):
+    def __init__(self, context, start, end, answer, neg_candidates, supporting_evidence=None):
         self.context = context
         self.start = start
         self.end = end
         self.answer = answer
         self.neg_candidates = neg_candidates
+        self.supporting_evidence = supporting_evidence

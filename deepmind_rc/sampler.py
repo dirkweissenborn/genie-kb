@@ -56,12 +56,12 @@ class BatchSampler:
             answers = self.kb.answers(self.todo[i], self.which_set)
             supp_queries = []
             for i in range(len(starts)):
-                if i < k:
+                if starts[i] < k:
                     supp_queries.append(ContextQuery(None, starts[i], ends[i], answers[i], None))
             supp_queries = ContextQueries(None, supp_queries)
             neg_cands = list(set((c for c in answers if c != answers[-1])))
-            query = ContextQuery(ctxt, starts[-1], ends[-1], answers[-1], neg_cands)
-            batch_queries.append(ContextQueries(ctxt, [query], supporting_evidence=[supp_queries]))
+            query = ContextQuery(ctxt, starts[-1], ends[-1], answers[-1], neg_cands, supporting_evidence=[supp_queries])
+            batch_queries.append(ContextQueries(ctxt, [query]))
         self.todo = self.todo[self.batch_size:]
         self.count += 1
         return batch_queries
