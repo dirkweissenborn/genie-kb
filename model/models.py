@@ -169,34 +169,42 @@ class QAModel:
                     if self._max_queries > 1:
                         # used in multihop
                         answer_words = tf.nn.embedding_lookup(self.embeddings, supp_answer_ids)
-                        aligned_answer_words = tf.gather(answer_words, self._support_ids)
+                        aligned_answers_input = tf.gather(answer_words, self._support_ids)
 
                 self.evidence_weights = []
                 current_answers = [query]
                 current_query = query
 
                 aligned_support = tf.gather(supp_queries, self._support_ids)  # align supp_queries with queries
+                collab_support = tf.gather(query, self._collab_support_ids)  # align supp_queries with queries
+                aligned_support = tf.concat(0, [aligned_support, collab_support])
+
+                query_ids = tf.concat(0, [self._query_ids, self._collab_query_ids])
 
                 for i in range(self._max_queries):
                     with vs.variable_scope("evidence"):
                         vs.get_variable_scope()._reuse = \
                                 any(vs.get_variable_scope().name in v.name for v in tf.trainable_variables())
 
+                        collab_queries = tf.gather(current_query, self._collab_query_ids)  # align supp_queries with queries
                         aligned_queries = tf.gather(current_query, self._query_ids)  # align queries
+                        aligned_queries = tf.concat(0, [aligned_queries, collab_queries])
 
                         scores = tf_util.batch_dot(aligned_queries, aligned_support)
                         self.evidence_weights.append(scores)
                         e_scores = tf.exp(scores - tf.reduce_max(scores, [0], keep_dims=True))
-                        norm = tf.unsorted_segment_sum(e_scores, self._query_ids, num_queries) + 0.00001 # for zero norms
+                        norm = tf.unsorted_segment_sum(e_scores, query_ids, num_queries) + 0.00001 # for zero norms
                         norm = tf.reshape(norm, [-1, 1])
                         # this is basically the dot product between query and weighted supp_queries
                         summed_scores = tf.unsorted_segment_sum(tf.reshape(e_scores * scores, [-1,1]),
-                                                                self._query_ids, num_queries) / norm
+                                                                query_ids, num_queries) / norm
                         norm = tf.tile(norm, [1, self._size])
                         #scores = tf.tile(tf.reshape(scores, [-1, 1]), [1, self._size])
                         e_scores = tf.tile(tf.reshape(e_scores, [-1, 1]), [1, self._size])
-                        weighted_answers = tf.unsorted_segment_sum(e_scores * aligned_supp_answers,
-                                                                   self._query_ids, num_queries) / norm
+
+                        aligned_supp_answers_with_collab = tf.concat(0, [aligned_supp_answers, collab_queries])
+                        weighted_answers = tf.unsorted_segment_sum(e_scores * aligned_supp_answers_with_collab,
+                                                                   query_ids, num_queries) / norm
                         weighted_answers = tf.tanh(weighted_answers)
                         #answer_weight = tf.contrib.layers.fully_connected(tf.concat(1, [weighted_queries,query]), self._size,
                         #                                                  activation_fn=tf.nn.relu, weight_init=None,
@@ -212,10 +220,11 @@ class QAModel:
                                                       lambda: current_answers[i]))
 
                         if i < self._max_queries - 1:
-                            weighted_answer_words = tf.unsorted_segment_sum(e_scores * aligned_answer_words,
-                                                                            self._query_ids, num_queries) / norm
+                            aligned_answers_input_with_collab = tf.concat(0, [aligned_answers_input, collab_queries])
+                            weighted_answer_words = tf.unsorted_segment_sum(e_scores * aligned_answers_input_with_collab,
+                                                                            query_ids, num_queries) / norm
 
-                            weighted_queries = tf.unsorted_segment_sum(e_scores * aligned_support, self._query_ids, num_queries) / norm
+                            weighted_queries = tf.unsorted_segment_sum(e_scores * aligned_support, query_ids, num_queries) / norm
                             c = tf.contrib.layers.fully_connected(tf.concat(1, [current_query, weighted_answer_words]), self._size,
                                                                   activation_fn=tf.tanh, weight_init=None, bias_init=None)
 
@@ -258,7 +267,9 @@ class QAModel:
         self._query_partition = tf.placeholder(tf.int32, [None], "query_partition")
         # aligned support ids with query ids for supporting evidence
         self._support_ids = tf.placeholder(tf.int64, shape=[None], name="supp_ids")
+        self._collab_support_ids = tf.placeholder(tf.int64, shape=[None], name="collab_supp_ids")
         self._query_ids = tf.placeholder(tf.int64, shape=[None], name="query_ids")
+        self._collab_query_ids = tf.placeholder(tf.int64, shape=[None], name="collab_query_ids")
 
         self._feed_dict = {}
 
@@ -286,6 +297,8 @@ class QAModel:
         self._query_part = []
         self._queries = []
         self._support = []
+        self._collab_queries = []
+        self._collab_support = []
 
         self.supporting_qa = []
 
@@ -319,6 +332,14 @@ class QAModel:
             self._query_part.append(0 if is_query else 1)
 
         if is_query:
+            if context_query.collaborative_support:
+                # save queries also as support, only with different query_partition index (1 for support)
+                for i, q in enumerate(context_query.queries):
+                    for j in range(len(context_query.queries)):
+                        if j != i:
+                            self._collab_queries.append(self._query_idx+i)
+                            self._collab_support.append(self._query_idx+j)
+
             ### add query specific supports ###
             for i, q in enumerate(context_query.queries):
                 if q.supporting_evidence is not None and self._max_queries > 0:
@@ -396,6 +417,8 @@ class QAModel:
         self._feed_dict[self._candidate_mask] = cand_mask
         self._feed_dict[self._query_ids] = self._queries
         self._feed_dict[self._support_ids] = self._support
+        self._feed_dict[self._collab_query_ids] = self._collab_queries
+        self._feed_dict[self._collab_support_ids] = self._collab_support
         self._feed_dict[self._query_partition] = self._query_part
 
     def _get_feed_dict(self):
@@ -469,10 +492,10 @@ def test_model():
                                             ContextQuery(contexts[2], 2,3,1,[0,1])])]
 
     queries = [ContextQueries(contexts[0], [ContextQuery(contexts[0], 0,1,0,[2,1]),
-                                            ContextQuery(contexts[0], 2,3,2,[0,1])], queries),
+                                            ContextQuery(contexts[0], 2,3,2,[0,1])], collaborative_support=True),
                ContextQueries(contexts[1], [ContextQuery(contexts[1], 1,2,2,[0,1], queries)]),
                ContextQueries(contexts[2], [ContextQuery(contexts[2], 1,2,1,[0,2], queries),
-                                            ContextQuery(contexts[2], 2,3,2,[0,1], queries)])]
+                                            ContextQuery(contexts[2], 2,3,2,[0,1])], queries)]
 
     with tf.Session() as sess:
         sess.run(tf.initialize_all_variables())
