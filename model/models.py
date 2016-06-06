@@ -10,6 +10,7 @@ import model
 from tensorflow.models.rnn.rnn_cell import *
 import my_rnn
 import functools
+from model.query import *
 
 
 class QAModel:
@@ -80,7 +81,6 @@ class QAModel:
                 x_inv_norm = x_inv_norm * factor
             x_inv_norm = tf.minimum(1.0, x_inv_norm)
             return tf.mul(x, x_inv_norm, name=name)
-
 
     def _composition_function(self, inputs, length, init_state=None):
         if self._composition == "GRU":
@@ -276,8 +276,7 @@ class QAModel:
         self._support = []
         self.supporting_qa = []
 
-    def _add_example_and_negs(self, context, starts, ends, answers,
-                              neg_candidates, supporting_evidence=None, is_query=True):
+    def _add_example(self, context_query, is_query=True):
         '''
         :param context: list of symbol indices
         :param starts: list of span starts to answer for
@@ -287,50 +286,47 @@ class QAModel:
         :param supporting_evidence: list of (context, positions)
         :return:
         '''
-        assert is_query or supporting_evidence is None, "Supporting evidence cannot have supporting evidence!"
+        assert is_query or context_query.supporting_evidence is None, "Supporting evidence cannot have supporting evidence!"
         if self._batch_idx >= self._batch_size:
             self._change_batch_size(max(self._batch_size*2, self._batch_idx))
-        self._ctxt[self._batch_idx][:len(context)] = context
-        self._len[self._batch_idx] = len(context)
-        self._s.extend(starts)
-        self._e.extend(ends)
+        self._ctxt[self._batch_idx][:len(context_query.context)] = context_query.context
+        self._len[self._batch_idx] = len(context_query.context)
 
-        for i, pos in enumerate(starts):
+        for i, q in enumerate(context_query.queries):
+            self._s.append(q.start)
+            self._e.append(q.end)
             self._span_ctxt.append(self._batch_idx)
-            self._answer_in.append(answers[i])
-            cands = [answers[i]]
-            if neg_candidates is not None and i < len(neg_candidates) and neg_candidates[i] is not None:
-                cands.extend(neg_candidates[i])
+            self._answer_in.append(q.answer)
+            cands = [q.answer]
+            if q.neg_candidates is not None and q.neg_candidates is not None:
+                cands.extend(q.neg_candidates)
             self._answer_cands.append(cands)
             self._query_part.append(0 if is_query else 1)
 
         query_batch_idx = self._batch_idx
         self._batch_idx += 1
 
-        if supporting_evidence is not None and self._max_queries > 0:
-            for supp_context, supp_start, supp_end, supp_answers in supporting_evidence:
-                if supp_context is None:
+        if context_query.supporting_evidence is not None and self._max_queries > 0:
+            for qs in context_query.supporting_evidence:
+                if qs.context is None:
                     #supporting context is the same as query context, only add corresponding positions
-                    self._s.extend(supp_start)
-                    self._e.extend(supp_end)
-                    for i, start in enumerate(supp_start):
+                    for q in qs.queries:
+                        self._s.append(q.start)
+                        self._e.append(q.end)
                         self._span_ctxt.append(query_batch_idx)
-                        self._answer_in.append(supp_answers[i])
-                        self._answer_cands.append([supp_answers[i]])
+                        self._answer_in.append(q.answer)
+                        self._answer_cands.append([q.answer])
                         self._query_part.append(1)
-                        self.supporting_qa.append((context, start, supp_end[i], supp_answers[i]))
+                        self.supporting_qa.append((q.context, q.start, q.end, q.answer))
                 else:
-                    self._add_example_and_negs(supp_context, supp_start, supp_end, supp_answers, None, is_query=False)
-                self._support.extend([self._query_idx] * len(supp_start))
+                    self._add_example(qs, is_query=False)
+                self._support.extend([self._query_idx] * len(qs.queries))
 
         if is_query:
             self._query_idx += 1
         else:
-            for i, start in enumerate(starts):
-                self.supporting_qa.append((context, start, ends[i], answers[i]))
-
-    def _add_example(self, context, starts, ends, answers, supporting_evidence=None, is_query=True):
-        self._add_example_and_negs(context, starts, ends, answers, None, supporting_evidence, is_query)
+            for i, q in enumerate(context_query.queries):
+                self.supporting_qa.append((q.context, q.start, q.end, q.answer))
 
     def _finish_adding_examples(self):
         max_cands = max((len(x) for x in self._answer_cands))
@@ -364,37 +360,22 @@ class QAModel:
     def _get_feed_dict(self):
         return self._feed_dict
 
-    def score_examples(self, sess, contexts, starts, ends, answers, supporting_evidence=None):
-        return self.score_examples_with_negs(sess, contexts, starts, ends, answers, None, supporting_evidence=supporting_evidence)
-
-    def score_examples_with_negs(self, sess, contexts, starts, ends, answers, neg_candidates, supporting_evidence=None):
+    def score_examples(self, sess, queries):
         i = j = 0
-        num_queries = functools.reduce(lambda a,x: a+len(x), starts, 0)
+        num_queries = functools.reduce(lambda a,x: a+len(x.queries), queries, 0)
         max_neg_candidates = 0
-        if neg_candidates:
-            for cands in neg_candidates:
-                for cs in cands:
-                    max_neg_candidates = max(max_neg_candidates, len(cs))
+        for context_queries in queries:
+            for q in context_queries.queries:
+                max_neg_candidates = max(max_neg_candidates, len(q.neg_candidates))
         result = np.zeros([num_queries, max_neg_candidates+1])
-        while i < len(contexts):
-            batch_size = min(self._batch_size, len(contexts)-i)
+        while i < len(queries):
+            batch_size = min(self._batch_size, len(queries)-i)
             self._start_adding_examples()
             num_batch_queries = 0
             for batch_idx in range(batch_size):
-                num_batch_queries += len(starts[i + batch_idx])
-                if neg_candidates:
-                    self._add_example_and_negs(contexts[i + batch_idx],
-                                               starts[i + batch_idx],
-                                               ends[i + batch_idx],
-                                               answers[i + batch_idx],
-                                               neg_candidates[i+batch_idx],
-                                               None if supporting_evidence is None else supporting_evidence[i+batch_idx])
-                else:
-                    self._add_example(contexts[i + batch_idx],
-                                      starts[i + batch_idx],
-                                      ends[i + batch_idx],
-                                      answers[i + batch_idx],
-                                      None if supporting_evidence is None else supporting_evidence[i+batch_idx])
+                context_query = queries[batch_idx + i]
+                num_batch_queries += len(context_query.queries)
+                self._add_example(context_query)
             self._finish_adding_examples()
             num_cands = len(self._answer_cands[0])
             result[j:j+num_batch_queries, 0:num_cands] = sess.run(self._scores_with_negs, feed_dict=self._get_feed_dict())
@@ -403,7 +384,7 @@ class QAModel:
 
         return result
 
-    def step(self, sess, contexts, starts, ends, answers, neg_candidates, supporting_evidence=None, mode="update"):
+    def step(self, sess, queries, mode="update"):
         '''
         :param sess:
         :param contexts: list of contexts, a context itself is a list of symbol indices
@@ -417,16 +398,14 @@ class QAModel:
         '''
         assert self._is_train, "model has to be created in training mode!"
         i = 0
-        while i < len(contexts):
-            batch_size = min(self._batch_size, len(contexts)-i)
+        while i < len(queries):
+            batch_size = min(self._batch_size, len(queries)-i)
             self._start_adding_examples()
+            num_batch_queries = 0
             for batch_idx in range(batch_size):
-                self._add_example_and_negs(contexts[i + batch_idx],
-                                           starts[i + batch_idx],
-                                           ends[i + batch_idx],
-                                           answers[i + batch_idx],
-                                           neg_candidates[i+batch_idx],
-                                           None if supporting_evidence is None else supporting_evidence[i+batch_idx])
+                context_query = queries[batch_idx + i]
+                num_batch_queries += len(context_query.queries)
+                self._add_example(context_query)
             self._finish_adding_examples()
             i += batch_size
             if mode == "loss":
@@ -436,25 +415,34 @@ class QAModel:
 
 
 def test_model():
+
     model = QAModel(10, 4, 5, 5, max_queries=1)
     # 3 contexts (of length 3) with queries at 2/1/2 (totaling 5) positions
     # and respective negative candidates for each position
     contexts =       [[4, 1, 4]       , [1, 4, 0], [0, 4, 4]]  # 4 => placeholder for prediction position
-    starts   =       [[0     , 2]     , [1]      , [1     , 2]]
-    ends     =       [[1     , 3]     , [2]      , [2     , 3]]
-    answers  =       [[0     , 2]     , [2]      , [1     , 2]]
-    neg_candidates = [[[2, 1], [0, 1]], [[0, 1]] , [[0, 2], [0, 1]]]
+
+    queries = [ContextQueries(contexts[0], [ContextQuery(contexts[0], 0,1,0,[2,1]),
+                                            ContextQuery(contexts[0], 2,3,2,[0,1])]),
+               ContextQueries(contexts[1], [ContextQuery(contexts[1], 1,2,2,[0,1])]),
+               ContextQueries(contexts[2], [ContextQuery(contexts[2], 1,2,1,[0,2]),
+                                            ContextQuery(contexts[2], 2,3,2,[0,1])])]
+
+    queries = [ContextQueries(contexts[0], [ContextQuery(contexts[0], 0,1,0,[2,1]),
+                                            ContextQuery(contexts[0], 2,3,2,[0,1])], queries),
+               ContextQueries(contexts[1], [ContextQuery(contexts[1], 1,2,2,[0,1])], queries),
+               ContextQueries(contexts[2], [ContextQuery(contexts[2], 1,2,1,[0,2]),
+                                            ContextQuery(contexts[2], 2,3,2,[0,1])], queries)]
 
     with tf.Session() as sess:
         sess.run(tf.initialize_all_variables())
         print("Test update ...")
         for i in range(10):
             print("Loss: %.3f" %
-                  model.step(sess, contexts, starts, ends, answers, neg_candidates, [list(zip(contexts, starts, ends, answers))] * 5)[0])
+                  model.step(sess, queries)[0])
         print("Test scoring (without supporting evidence) ...")
-        print(model.score_examples(sess, contexts, starts, ends, answers))
+        print(model.score_examples(sess, queries))
         print("Test scoring with negative examples (and supporting evidence)...")
-        print(model.score_examples_with_negs(sess, contexts, starts, ends, answers, neg_candidates, [list(zip(contexts, starts, ends, answers))] * 5))
+        print(model.score_examples(sess, queries))
         print("Done")
 
 

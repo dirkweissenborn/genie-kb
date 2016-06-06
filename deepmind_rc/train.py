@@ -117,12 +117,12 @@ with tf.Session(config=config) as sess:
     while FLAGS.max_iterations < 0 or i < FLAGS.max_iterations:
         i += 1
         start_time = time.time()
-        contexts, starts, ends, answers, neg_candidates, supporting_evidence = sampler.get_batch()
+        batch = sampler.get_batch()
         end_of_epoch = sampler.end_of_epoch()
         if end_of_epoch:
             sampler.reset()
         # already fetch next batch parallel to running model
-        loss += m.step(sess, contexts, starts, ends, answers, neg_candidates, supporting_evidence, "update")
+        loss += m.step(sess, batch, "update")
         step_time += (time.time() - start_time)
 
         sys.stdout.write("\r%.1f%% Loss: %.3f" %

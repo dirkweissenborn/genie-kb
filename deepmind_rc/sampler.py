@@ -1,4 +1,5 @@
 import random
+from model.query import *
 
 
 class BatchSampler:
@@ -41,7 +42,8 @@ class BatchSampler:
         if self.end_of_epoch():
             print("WARNING: End of epoch reached in sampler. Resetting automatically.")
             self.reset()
-        contexts, starts, ends, answers, neg_candidates, supporting_evidence = [], [], [], [], [], []
+
+        batch_queries = []
         splitter = self.kb.id("||")
         for i in range(self.batch_size):
             ctxt = self.kb.context(self.todo[i], self.which_set)
@@ -50,25 +52,19 @@ class BatchSampler:
                 k -= 1
             # < k: supporting evidence; >k: query
             # we switch start and end here, because entities are anonymized -> consider only outer context
-            end, start = self.kb.spans(self.todo[i], self.which_set)
-            answer = self.kb.answers(self.todo[i], self.which_set)
-            contexts.append(ctxt)
-            starts.append([start[-1]])  # span start
-            ends.append([end[-1]])  # span end
-            answers.append([answer[-1]])
-
-            start = [p for p in start if p < k]
-            end = end[:len(start)]
-            answer = answer[:len(start)]
-            neg_cands = list(set(answer))
-            # negative candidates are all entities within supporting evidence that are not the answer
-            neg_candidates.append([neg_cands])
-            # points of interest in supporting evidence
-            supporting_evidence.append([(None, start, end, answer)])
-        
+            ends, starts = self.kb.spans(self.todo[i], self.which_set)
+            answers = self.kb.answers(self.todo[i], self.which_set)
+            supp_queries = []
+            for i in range(len(starts)):
+                if i < k:
+                    supp_queries.append(ContextQuery(None, starts[i], ends[i], answers[i], None))
+            supp_queries = ContextQueries(None, supp_queries)
+            neg_cands = list(set((c for c in answers if c != answers[-1])))
+            query = ContextQuery(ctxt, starts[-1], ends[-1], answers[-1], neg_cands)
+            batch_queries.append(ContextQueries(ctxt, [query], supporting_evidence=[supp_queries]))
         self.todo = self.todo[self.batch_size:]
         self.count += 1
-        return (contexts, starts, ends, answers, neg_candidates, supporting_evidence)
+        return batch_queries
 
     def get_epoch(self):
         return self.count / self.epoch_size

@@ -2,8 +2,7 @@ import numpy as np
 import sys
 
 def rank_batch(sess, model, batch):
-    contexts, starts, ends, answers, neg_candidates, supporting_evidence = batch
-    scores = model.score_examples_with_negs(sess, contexts, starts, ends, answers, neg_candidates, supporting_evidence)
+    scores = model.score_examples(sess, batch)
     ix = np.argsort(scores, 1)[:,::-1]
     rank = np.where(ix == 0)[1] + 1
 
