@@ -164,19 +164,18 @@ class QAModel:
                 with tf.device("/cpu:0"):
                     _, supp_answer_ids = tf.dynamic_partition(self._answer_input, self._query_partition, 2)
                     supp_answers = tf.nn.embedding_lookup(self.candidates, supp_answer_ids)
+                    aligned_supp_answers = tf.gather(supp_answers, self._support_ids)  # and with respective answers
+
                     if self._max_queries > 1:
                         # used in multihop
                         answer_words = tf.nn.embedding_lookup(self.embeddings, supp_answer_ids)
+                        aligned_answer_words = tf.gather(answer_words, self._support_ids)
 
                 self.evidence_weights = []
                 current_answers = [query]
                 current_query = query
 
                 aligned_support = tf.gather(supp_queries, self._support_ids)  # align supp_queries with queries
-                aligned_supp_answers = tf.gather(supp_answers, self._support_ids)  # and with respective answers
-                if self._max_queries > 1:
-                    # align answer words with queries for multihop
-                    aligned_answer_words = tf.gather(answer_words, self._support_ids)
 
                 for i in range(self._max_queries):
                     with vs.variable_scope("evidence"):
