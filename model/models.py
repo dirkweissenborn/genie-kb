@@ -148,7 +148,7 @@ class QAModel:
                 out_fw = tf.gather(outs_fw, self._ends + self._span_context * (self._max_length + 1))
             # form query from forward and backward compositions
             #query = tf.contrib.layers.fully_connected(tf.concat(1, [out_fw, out_bw]), self._size,
-             #                                         activation_fn=None, weight_init=None)
+            #                                          activation_fn=None, weight_init=None)
             query = out_fw + out_bw #tf.tanh(query)#, float(self._size))
         # add supporting evidence to this query
         return query
@@ -419,13 +419,13 @@ def test_model():
     model = QAModel(10, 4, 5, 5, max_queries=1)
     # 3 contexts (of length 3) with queries at 2/1/2 (totaling 5) positions
     # and respective negative candidates for each position
-    contexts =       [[4, 1, 4]       , [1, 4, 0], [0, 4, 4]]  # 4 => placeholder for prediction position
+    contexts =       [[0, 1, 2]       , [1, 2, 0], [0, 2, 1]]  # 4 => placeholder for prediction position
 
     queries = [ContextQueries(contexts[0], [ContextQuery(contexts[0], 0,1,0,[2,1]),
                                             ContextQuery(contexts[0], 2,3,2,[0,1])]),
                ContextQueries(contexts[1], [ContextQuery(contexts[1], 1,2,2,[0,1])]),
-               ContextQueries(contexts[2], [ContextQuery(contexts[2], 1,2,1,[0,2]),
-                                            ContextQuery(contexts[2], 2,3,2,[0,1])])]
+               ContextQueries(contexts[2], [ContextQuery(contexts[2], 1,2,2,[0,2]),
+                                            ContextQuery(contexts[2], 2,3,1,[0,1])])]
 
     queries = [ContextQueries(contexts[0], [ContextQuery(contexts[0], 0,1,0,[2,1]),
                                             ContextQuery(contexts[0], 2,3,2,[0,1])], queries),
@@ -439,9 +439,7 @@ def test_model():
         for i in range(10):
             print("Loss: %.3f" %
                   model.step(sess, queries)[0])
-        print("Test scoring (without supporting evidence) ...")
-        print(model.score_examples(sess, queries))
-        print("Test scoring with negative examples (and supporting evidence)...")
+        print("Test scoring ...")
         print(model.score_examples(sess, queries))
         print("Done")
 
@@ -462,9 +460,7 @@ Loss: 0.865
 Loss: 0.807
 Loss: 0.736
 Loss: 0.648
-Test scoring (without supporting evidence) ...
-[ 0.818488    1.35567915  0.90820128 -0.02418646  0.77772975]
-Test scoring with negative examples (and supporting evidence)...
+Test scoring....
 [[  9.91435409e-01  -4.19906378e-01   5.15302122e-02]
  [  1.89884555e+00  -3.02041292e-01  -1.25379610e+00]
  [  3.59776109e-01  -1.48627639e-01  -9.99999625e+05]
