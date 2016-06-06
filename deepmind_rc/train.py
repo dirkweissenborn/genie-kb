@@ -16,6 +16,8 @@ tf.app.flags.DEFINE_string('kb', None, 'Path to prepared RC KB.')
 
 # model
 tf.app.flags.DEFINE_integer("size", 256, "hidden size of model")
+tf.app.flags.DEFINE_integer("max_queries", 2, "max queries to supporting evidence")
+tf.app.flags.DEFINE_integer("num_queries", 1, "num queries to supporting evidence")
 
 # training
 tf.app.flags.DEFINE_float("learning_rate", 1e-3, "Learning rate.")
@@ -58,7 +60,7 @@ with tf.Session(config=config) as sess:
     max_length = kb.max_context_length
     devices = FLAGS.devices.split(",")
     m = QAModel(FLAGS.size, FLAGS.batch_size, len(kb.vocab), max_length,
-                learning_rate=FLAGS.learning_rate, max_queries=1,
+                learning_rate=FLAGS.learning_rate, max_queries=FLAGS.max_queries,
                 devices=devices)
 
     print("Created model: " + m.name())
@@ -80,6 +82,9 @@ with tf.Session(config=config) as sess:
             os.makedirs(train_dir)
         print("Initializing variables ...")
         sess.run(tf.initialize_all_variables())
+
+    print("Consecutive support lookup: %d" % FLAGS.num_queries)
+    sess.run(m.num_queries.assign(FLAGS.num_queries))
 
     num_params = functools.reduce(lambda acc, x: acc + x.size, sess.run(tf.trainable_variables()), 0)
     print("Num params: %d" % num_params)
