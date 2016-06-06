@@ -152,7 +152,8 @@ with tf.Session(config=config) as sess:
             print("%d%% in epoch done." % (100*sampler.get_epoch()))
             # print(statistics for the previous epoch.)
             step_time /= FLAGS.ckpt_its
-            print("global step %d learning rate %.5f, step-time %.3f, loss %.4f" % (m.global_step.eval(),
+            print("global s"
+                  "tep %d learning rate %.5f, step-time %.3f, loss %.4f" % (m.global_step.eval(),
                                                                                     m.learning_rate.eval(),
                                                                                     step_time, loss))
             step_time, loss = 0.0, 0.0
@@ -164,7 +165,6 @@ with tf.Session(config=config) as sess:
     print("Restore model to best on validation, with MRR: %.3f" % best_valid_mrr)
     m.saver.restore(sess, best_path[0])
     model_name = best_path[0].split("/")[-1]
-    shutil.copyfile(best_path[0], os.path.join(FLAGS.save_dir, model_name))
 
     print("########## Test ##############")
     acc, mrr = eval.eval_dataset(sess, m, test_sampler, True)
