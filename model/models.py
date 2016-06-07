@@ -85,24 +85,24 @@ class QAModel:
     def _composition_function(self, inputs, length, init_state=None):
         if self._composition == "GRU":
             cell = GRUCell(self._size)
-            return dynamic_rnn(cell, inputs, sequence_length=length,
+            return dynamic_rnn(cell, inputs, sequence_length=length, time_major=True,
                                initial_state=init_state, dtype=tf.float32)[0]
         elif self._composition == "LSTM":
             cell = BasicLSTMCell(self._size)
             init_state = tf.concat(1, [tf.zeros_like(init_state, tf.float32), init_state]) if init_state else None
-            outs = dynamic_rnn(cell, inputs, sequence_length=length,
+            outs = dynamic_rnn(cell, inputs, sequence_length=length, time_major=True,
                                initial_state=init_state, dtype=tf.float32)[0]
             return outs
         elif self._composition == "BiGRU":
             cell = GRUCell(self._size // 2, self._size)
             init_state_fw, init_state_bw = tf.split(1, 2, init_state) if init_state else (None, None)
             with vs.variable_scope("forward"):
-                fw_outs = dynamic_rnn(cell, inputs, sequence_length=length,
+                fw_outs = dynamic_rnn(cell, inputs, sequence_length=length, time_major=True,
                                       initial_state=init_state_fw, dtype=tf.float32)[0]
             with vs.variable_scope("backward"):
                 rev_inputs = tf.reverse_sequence(tf.pack(inputs), length, 0, 1)
                 rev_inputs = [tf.reshape(x, [-1, self._size]) for x in tf.split(0, len(inputs), rev_inputs)]
-                bw_outs = dynamic_rnn(cell, rev_inputs, sequence_length=length,
+                bw_outs = dynamic_rnn(cell, rev_inputs, sequence_length=length, time_major=True,
                                       initial_state=init_state_bw, dtype=tf.float32)[0]
                 bw_outs = tf.reverse_sequence(tf.pack(bw_outs), length, 0, 1)
                 bw_outs = [tf.reshape(x, [-1, self._size]) for x in tf.split(0, len(inputs), bw_outs)]
@@ -115,39 +115,41 @@ class QAModel:
 
     def _comp_f(self):
         with tf.device("/cpu:0"):
-            embedded = tf.nn.embedding_lookup(self.embeddings, self._context)
-            batch_size = tf.gather(tf.shape(self._context), [0])
+            embedded = tf.nn.embedding_lookup(self.embeddings, tf.transpose(self._context))
+            batch_size = tf.shape(self._context)[0]
+            batch_size_32 = tf.reshape(batch_size, [1])
+            batch_size_64 = tf.cast(batch_size, tf.int64)
 
         with tf.device(self._device1):
             #use other device for backward rnn
             with vs.variable_scope("backward"):
                 min_start = tf.segment_min(self._starts, self._span_context)
                 init_state = tf.get_variable("init_state", [self._size], initializer=self._init)
-                init_state = tf.reshape(tf.tile(init_state, batch_size), [-1, self._size])
-                rev_embedded = tf.reverse_sequence(embedded, self._length, 1, 0)
+                init_state = tf.reshape(tf.tile(init_state, batch_size_32), [-1, self._size])
+                rev_embedded = tf.reverse_sequence(embedded, self._length, 0, 1)
                 #rev_e_inputs = [tf.reshape(e, [-1, self._size]) for e in tf.split(1, self._max_length, rev_embedded)]
                 outs_bw = self._composition_function(rev_embedded, self._length - min_start, init_state)
                 #outs_bw.insert(0, init_state)
                 # reshape to all possible queries for all sequences. Dim[0]=batch_size*max_length+1.
                 # "+1" because we include the initial state
-                outs_bw = tf.reshape(tf.concat(1, [tf.expand_dims(init_state, 1), outs_bw]), [-1, self._size])
+                outs_bw = tf.reshape(tf.concat(0, [tf.expand_dims(init_state, 0), outs_bw]), [-1, self._size])
                 # gather respective queries via their lengths-start (because reversed sequence)
                 #  (with offset of context_index*(max_length+1))
                 lengths_aligned = tf.gather(self._length, self._span_context)
-                out_bw = tf.gather(outs_bw, (lengths_aligned - self._starts) + self._span_context * (self._max_length + 1))
+                out_bw = tf.gather(outs_bw, (lengths_aligned - self._starts) * batch_size_64 + self._span_context)
 
         with tf.device(self._device2):
             with vs.variable_scope("forward"):
                 #e_inputs = [tf.reshape(e, [-1, self._size]) for e in tf.split(1, self._max_length, embedded)]
                 max_end = tf.segment_max(self._ends, self._span_context)
                 init_state = tf.get_variable("init_state", [self._size], initializer=self._init)
-                init_state = tf.reshape(tf.tile(init_state, batch_size), [-1, self._size])
+                init_state = tf.reshape(tf.tile(init_state, batch_size_32), [-1, self._size])
                 outs_fw = self._composition_function(embedded, max_end, init_state)
                 # reshape to all possible queries for all sequences. Dim[0]=batch_size*max_length+1.
                 # "+1" because we include the initial state
-                outs_fw = tf.reshape(tf.concat(1, [tf.expand_dims(init_state, 1), outs_fw]), [-1, self._size])
+                outs_fw = tf.reshape(tf.concat(0, [tf.expand_dims(init_state, 0), outs_fw]), [-1, self._size])
                 # gather respective queries via their positions (with offset of context_index*(max_length+1))
-                out_fw = tf.gather(outs_fw, self._ends + self._span_context * (self._max_length + 1))
+                out_fw = tf.gather(outs_fw, self._ends * batch_size_64 + self._span_context)
             # form query from forward and backward compositions
             #query = tf.contrib.layers.fully_connected(tf.concat(1, [out_fw, out_bw]), self._size,
             #                                          activation_fn=None, weight_init=None)
@@ -254,6 +256,7 @@ class QAModel:
             self._answer_input = tf.placeholder(tf.int64, shape=[None], name="answer")
             self._starts = tf.placeholder(tf.int64, shape=[None], name="span_start")
             self._ends = tf.placeholder(tf.int64, shape=[None], name="span_end")
+            # holds batch idx for respective span
             self._span_context = tf.placeholder(tf.int64, shape=[None], name="answer_position_context")
             self._candidate_mask = tf.placeholder(tf.float32, shape=[None, None], name="candidate_mask")
             self._length = tf.placeholder(tf.int64, shape=[None], name="context_length")
