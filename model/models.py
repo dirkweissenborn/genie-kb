@@ -115,7 +115,7 @@ class QAModel:
 
     def _comp_f(self):
         with tf.device("/cpu:0"):
-            max_length = tf.reduce_max(self._length)
+            max_length = tf.cast(tf.reduce_max(self._length), tf.int32)
             context_t = tf.transpose(self._context)
             context_t = tf.slice(context_t, [0, 0], tf.pack([max_length, -1]))
             embedded = tf.nn.embedding_lookup(self.embeddings, context_t)
