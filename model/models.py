@@ -30,7 +30,7 @@ class QAModel:
         self._device2 = devices[2 % len(devices)] if devices is not None else "/cpu:0"
         self._device3 = devices[3 % len(devices)] if devices is not None else "/cpu:0"
         with tf.device(self._device0):
-            with vs.variable_scope(self.name(), tf.contrib.layers.xavier_initializer()):
+            with vs.variable_scope(self.name(), initializer=tf.contrib.layers.xavier_initializer()):
                 self._init_inputs()
                 with tf.device("/cpu:0"):
                     self.candidates = tf.get_variable("E_candidate", [answer_vocab_size, self._size], initializer=self._init)
