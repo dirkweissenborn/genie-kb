@@ -30,11 +30,11 @@ class QAModel:
         self._device2 = devices[2 % len(devices)] if devices is not None else "/cpu:0"
         self._device3 = devices[3 % len(devices)] if devices is not None else "/cpu:0"
         with tf.device(self._device0):
-            with vs.variable_scope(self.name(), initializer=self._init):
+            with vs.variable_scope(self.name()):
                 self._init_inputs()
                 with tf.device("/cpu:0"):
-                    self.candidates = tf.get_variable("E_candidate", [answer_vocab_size, self._size])
-                    self.embeddings = tf.get_variable("E_words", [vocab_size, self._size])
+                    self.candidates = tf.get_variable("E_candidate", [answer_vocab_size, self._size], initializer=self._init)
+                    self.embeddings = tf.get_variable("E_words", [vocab_size, self._size], initializer=self._init)
                     answer, _ = tf.dynamic_partition(self._answer_input, self._query_partition, 2)
                     lookup_individual = tf.nn.embedding_lookup(self.candidates, answer)
                     cands,_ = tf.dynamic_partition(self._answer_candidates, self._query_partition, 2)
@@ -122,7 +122,7 @@ class QAModel:
             #use other device for backward rnn
             with vs.variable_scope("backward"):
                 min_start = tf.segment_min(self._starts, self._span_context)
-                init_state = tf.get_variable("init_state", [self._size])
+                init_state = tf.get_variable("init_state", [self._size], initializer=self._init)
                 init_state = tf.reshape(tf.tile(init_state, batch_size), [-1, self._size])
                 rev_embedded = tf.reverse_sequence(embedded, self._length, 1, 0)
                 #rev_e_inputs = [tf.reshape(e, [-1, self._size]) for e in tf.split(1, self._max_length, rev_embedded)]
@@ -140,7 +140,7 @@ class QAModel:
             with vs.variable_scope("forward"):
                 #e_inputs = [tf.reshape(e, [-1, self._size]) for e in tf.split(1, self._max_length, embedded)]
                 max_end = tf.segment_max(self._ends, self._span_context)
-                init_state = tf.get_variable("init_state", [self._size])
+                init_state = tf.get_variable("init_state", [self._size], initializer=self._init)
                 init_state = tf.reshape(tf.tile(init_state, batch_size), [-1, self._size])
                 outs_fw = self._composition_function(embedded, max_end, init_state)
                 # reshape to all possible queries for all sequences. Dim[0]=batch_size*max_length+1.
