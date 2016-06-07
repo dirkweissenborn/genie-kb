@@ -7,8 +7,8 @@ import tensorflow as tf
 from tensorflow.python.ops.seq2seq import *
 import tf_util
 import model
-from tensorflow.models.rnn.rnn_cell import *
-import my_rnn
+from tensorflow.python.ops.rnn_cell import *
+from tensorflow.python.ops.rnn import dynamic_rnn
 import functools
 from model.query import *
 
@@ -51,7 +51,7 @@ class QAModel:
                     self.learning_rate_decay_op = self.learning_rate.assign(self.learning_rate * 0.9)
                     self.global_step = tf.Variable(0, trainable=False, name="step")
 
-                    self.opt = tf.train.AdamOptimizer(self.learning_rate, beta1=0.0)
+                    self.opt = tf.train.AdamOptimizer(self.learning_rate)  #, beta1=0.0)
 
                     current_batch_size = tf.gather(tf.shape(self._scores_with_negs), [0])
                     labels = tf.constant([0], tf.int64)
@@ -65,7 +65,7 @@ class QAModel:
                     self._grads = tf.gradients(self._loss, train_params, self.training_weight, colocate_gradients_with_ops=True)
 
                     if len(train_params) > 0:
-                        self._update = self.opt.apply_gradients(zip(self._grads[:len(train_params)], train_params),
+                        self._update = self.opt.apply_gradients(zip(self._grads, train_params),
                                                                 global_step=self.global_step)
                     else:
                         self._update = tf.assign_add(self.global_step, 1)
@@ -85,22 +85,25 @@ class QAModel:
     def _composition_function(self, inputs, length, init_state=None):
         if self._composition == "GRU":
             cell = GRUCell(self._size)
-            return my_rnn.rnn(cell, inputs, sequence_length=length,
-                              initial_state=init_state, dtype=tf.float32)[0]
+            return dynamic_rnn(cell, inputs, sequence_length=length,
+                               initial_state=init_state, dtype=tf.float32)[0]
         elif self._composition == "LSTM":
             cell = BasicLSTMCell(self._size)
             init_state = tf.concat(1, [tf.zeros_like(init_state, tf.float32), init_state]) if init_state else None
-            outs = my_rnn.rnn(cell, inputs, sequence_length=length, initial_state=init_state, dtype=tf.float32)[0]
-            return tf.slice(outs, [0, cell.state_size-cell.output_size],[-1,-1])
+            outs = dynamic_rnn(cell, inputs, sequence_length=length,
+                               initial_state=init_state, dtype=tf.float32)[0]
+            return outs
         elif self._composition == "BiGRU":
             cell = GRUCell(self._size // 2, self._size)
             init_state_fw, init_state_bw = tf.split(1, 2, init_state) if init_state else (None, None)
             with vs.variable_scope("forward"):
-                fw_outs = my_rnn.rnn(cell, inputs, sequence_length=length, initial_state=init_state_fw, dtype=tf.float32)[0]
+                fw_outs = dynamic_rnn(cell, inputs, sequence_length=length,
+                                      initial_state=init_state_fw, dtype=tf.float32)[0]
             with vs.variable_scope("backward"):
                 rev_inputs = tf.reverse_sequence(tf.pack(inputs), length, 0, 1)
                 rev_inputs = [tf.reshape(x, [-1, self._size]) for x in tf.split(0, len(inputs), rev_inputs)]
-                bw_outs = my_rnn.rnn(cell, rev_inputs, sequence_length=length, initial_state=init_state_bw, dtype=tf.float32)[0]
+                bw_outs = dynamic_rnn(cell, rev_inputs, sequence_length=length,
+                                      initial_state=init_state_bw, dtype=tf.float32)[0]
                 bw_outs = tf.reverse_sequence(tf.pack(bw_outs), length, 0, 1)
                 bw_outs = [tf.reshape(x, [-1, self._size]) for x in tf.split(0, len(inputs), bw_outs)]
             return [tf.concat(1, [fw_out, bw_out]) for fw_out, bw_out in zip(fw_outs, bw_outs)]
@@ -122,12 +125,12 @@ class QAModel:
                 init_state = tf.get_variable("init_state", [self._size])
                 init_state = tf.reshape(tf.tile(init_state, batch_size), [-1, self._size])
                 rev_embedded = tf.reverse_sequence(embedded, self._length, 1, 0)
-                rev_e_inputs = [tf.reshape(e, [-1, self._size]) for e in tf.split(1, self._max_length, rev_embedded)]
-                outs_bw = self._composition_function(rev_e_inputs, self._length - min_start, init_state)
-                outs_bw.insert(0, init_state)
+                #rev_e_inputs = [tf.reshape(e, [-1, self._size]) for e in tf.split(1, self._max_length, rev_embedded)]
+                outs_bw = self._composition_function(rev_embedded, self._length - min_start, init_state)
+                #outs_bw.insert(0, init_state)
                 # reshape to all possible queries for all sequences. Dim[0]=batch_size*max_length+1.
                 # "+1" because we include the initial state
-                outs_bw = tf.reshape(tf.concat(1, outs_bw), [-1, self._size])
+                outs_bw = tf.reshape(tf.concat(1, [tf.expand_dims(init_state, 1), outs_bw]), [-1, self._size])
                 # gather respective queries via their lengths-start (because reversed sequence)
                 #  (with offset of context_index*(max_length+1))
                 lengths_aligned = tf.gather(self._length, self._span_context)
@@ -135,15 +138,14 @@ class QAModel:
 
         with tf.device(self._device2):
             with vs.variable_scope("forward"):
-                e_inputs = [tf.reshape(e, [-1, self._size]) for e in tf.split(1, self._max_length, embedded)]
+                #e_inputs = [tf.reshape(e, [-1, self._size]) for e in tf.split(1, self._max_length, embedded)]
                 max_end = tf.segment_max(self._ends, self._span_context)
                 init_state = tf.get_variable("init_state", [self._size])
-                init_state = tf.reshape(tf.tile(init_state, batch_size), [-1,self._size])
-                outs_fw = self._composition_function(e_inputs, max_end, init_state)
-                outs_fw.insert(0, init_state)
+                init_state = tf.reshape(tf.tile(init_state, batch_size), [-1, self._size])
+                outs_fw = self._composition_function(embedded, max_end, init_state)
                 # reshape to all possible queries for all sequences. Dim[0]=batch_size*max_length+1.
                 # "+1" because we include the initial state
-                outs_fw = tf.reshape(tf.concat(1, outs_fw), [-1, self._size])
+                outs_fw = tf.reshape(tf.concat(1, [tf.expand_dims(init_state, 1), outs_fw]), [-1, self._size])
                 # gather respective queries via their positions (with offset of context_index*(max_length+1))
                 out_fw = tf.gather(outs_fw, self._ends + self._span_context * (self._max_length + 1))
             # form query from forward and backward compositions
@@ -207,8 +209,8 @@ class QAModel:
                         weighted_answers = tf.tanh(weighted_answers)
                         answer_weight = tf.contrib.layers.fully_connected(weighted_score_sum, 1,
                                                                           activation_fn=tf.nn.sigmoid,
-                                                                          weight_init=tf.constant_initializer(1.0),
-                                                                          bias_init=tf.constant_initializer(0.0))
+                                                                          weights_initializer=tf.constant_initializer(1.0),
+                                                                          biases_initializer=tf.constant_initializer(0.0))
 
                         new_answer = weighted_answers * answer_weight + (1.0-answer_weight) * current_answers[i]
                         current_answers.append(tf.cond(tf.greater(self.num_queries, i),
@@ -222,13 +224,14 @@ class QAModel:
                                                                             query_ids, num_queries) / norm
 
                             weighted_queries = tf.unsorted_segment_sum(e_scores * aligned_support, query_ids, num_queries) / norm
-                            c = tf.contrib.layers.fully_connected(tf.concat(1, [current_query, weighted_answer_words]), self._size,
-                                                                  activation_fn=tf.tanh, weight_init=None, bias_init=None)
+                            c = tf.contrib.layers.fully_connected(tf.concat(1, [current_query, weighted_answer_words]),
+                                                                  self._size, activation_fn=tf.tanh,
+                                                                  weights_initializer=None, biases_initializer=None)
 
                             gate = tf.contrib.layers.fully_connected(tf.concat(1, [current_query, weighted_queries]),
-                                                                     self._size,
-                                                                     activation_fn=tf.sigmoid, weight_init=None,
-                                                                     bias_init=tf.constant_initializer(1))
+                                                                     self._size, activation_fn=tf.sigmoid,
+                                                                     weights_initializer=None,
+                                                                     biases_initializer=tf.constant_initializer(1))
                             current_query = gate * current_query + (1-gate) * c
 
             return current_answers[-1]
@@ -442,16 +445,24 @@ class QAModel:
     def step(self, sess, queries, mode="update"):
         '''
         :param sess:
-        :param contexts: list of contexts, a context itself is a list of symbol indices
-        :param positions: list of list of positions aligned with contexts, where a position determines a point
-        of interest or query within a context
-        :param neg_candidates: negative candidates for each position (list of list of list)
-        :param supporting_evidence: (context, positions) tuples for each context =>
-        list of (list of contexts, list of positions) or list of None, if no supporting evidence
+        :param queries: batch of ContextQueries
         :param mode:
         :return:
         '''
         assert self._is_train, "model has to be created in training mode!"
+        if mode == "loss":
+            return self.run(sess, self._loss, queries)
+        else:
+            return self.run(sess, [self._loss, self._update], queries)[0]
+
+    def run(self, sess, to_run, queries):
+        '''
+        :param sess:
+        :param to_run: target to run
+        :param queries: batch of ContextQueries
+        :param mode:
+        :return:
+        '''
         i = 0
         while i < len(queries):
             batch_size = min(self._batch_size, len(queries)-i)
@@ -463,15 +474,13 @@ class QAModel:
                 self._add_example(context_query)
             self._finish_adding_examples()
             i += batch_size
-            if mode == "loss":
-                return sess.run(self._loss, feed_dict=self._get_feed_dict())
-            else:
-                return sess.run([self._loss, self._update], feed_dict=self._get_feed_dict())[0]
+
+        return sess.run(to_run, feed_dict=self._get_feed_dict())
 
 
 def test_model():
 
-    model = QAModel(10, 4, 5, 5, max_queries=2)
+    model = QAModel(10, 4, 5, 5, 5, max_queries=2)
     # 3 contexts (of length 3) with queries at 2/1/2 (totaling 5) positions
     # and respective negative candidates for each position
     contexts =       [[0, 1, 2]       , [1, 2, 0], [0, 2, 1]]  # 4 => placeholder for prediction position
