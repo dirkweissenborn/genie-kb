@@ -177,8 +177,8 @@ class FactKB:
             self.load_values(pickle.load(f))
 
     def load_values(self, values):
-        [self.__entity_vocab, self.__entity_ids, self.__entity_ctxt, self.__entity_ctxt_span, self.__facts] = values[:4]
-        self.__kb.load_values(values[4:])
+        [self.__entity_vocab, self.__entity_ids, self.__entity_ctxt, self.__entity_ctxt_span, self.__facts] = values[:5]
+        self.__kb.load_values(values[5:])
 
     def values(self):
         return [self.__entity_vocab, self.__entity_ids, self.__entity_ctxt, self.__entity_ctxt_span, self.__facts] + self.__kb.values()
