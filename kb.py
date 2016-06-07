@@ -50,11 +50,9 @@ class KB:
                     self.__answers[dataset].append(self.__add_to_vocab(answer))
             self.__max_context_length = max(self.__max_context_length, len(context))
             self.__max_span_length = max(self.__max_span_length, len(spans))
-
-            i = len(self.__context_offsets[dataset])-1
         finally:
             self.__lock.release()
-        return i
+        return self.num_contexts(dataset)-1
 
     def __add_to_vocab(self, key):
         if key not in self.__ids:
@@ -85,8 +83,8 @@ class KB:
         end = self.__context_offsets[dataset][i + 1] if i + 1 < len(self.__context_offsets[dataset]) else -1
         return self.__contexts[dataset][offset:end]
 
-    def num_contexts(self, typ):
-        return len(self.__context_offsets.get(typ, []))
+    def num_contexts(self, dataset):
+        return len(self.__context_offsets.get(dataset, []))
 
     def spans(self, i, dataset="train"):
         offset = self.__span_offsets[dataset][i]
@@ -179,11 +177,11 @@ class FactKB:
             self.load_values(pickle.load(f))
 
     def load_values(self, values):
-        [self.__entity_vocab, self.__entity_ids, self.__entity_ctxt, self.__entity_ctxt_span] = values[:4]
+        [self.__entity_vocab, self.__entity_ids, self.__entity_ctxt, self.__entity_ctxt_span, self.__facts] = values[:4]
         self.__kb.load_values(values[4:])
 
     def values(self):
-        return [self.__entity_vocab, self.__entity_ids, self.__entity_ctxt, self.__entity_ctxt_span] + self.__kb.values()
+        return [self.__entity_vocab, self.__entity_ids, self.__entity_ctxt, self.__entity_ctxt_span, self.__facts] + self.__kb.values()
 
     def facts_about(self, entity, dataset):
         id = entity
