@@ -15,7 +15,7 @@ from model.query import *
 
 class QAModel:
 
-    def __init__(self, size, batch_size, vocab_size, max_length, is_train=True, learning_rate=1e-2,
+    def __init__(self, size, batch_size, vocab_size, answer_vocab_size, max_length, is_train=True, learning_rate=1e-2,
                  composition="GRU", max_queries=0, devices=None):
         self._vocab_size = vocab_size
         self._max_length = max_length
@@ -33,7 +33,7 @@ class QAModel:
             with vs.variable_scope(self.name(), initializer=self._init):
                 self._init_inputs()
                 with tf.device("/cpu:0"):
-                    self.candidates = tf.get_variable("E_candidate", [vocab_size, self._size])
+                    self.candidates = tf.get_variable("E_candidate", [answer_vocab_size, self._size])
                     self.embeddings = tf.get_variable("E_words", [vocab_size, self._size])
                     answer, _ = tf.dynamic_partition(self._answer_input, self._query_partition, 2)
                     lookup_individual = tf.nn.embedding_lookup(self.candidates, answer)
@@ -51,7 +51,7 @@ class QAModel:
                     self.learning_rate_decay_op = self.learning_rate.assign(self.learning_rate * 0.9)
                     self.global_step = tf.Variable(0, trainable=False, name="step")
 
-                    self.opt = tf.train.AdamOptimizer(self.learning_rate) #, beta1=0.0)
+                    self.opt = tf.train.AdamOptimizer(self.learning_rate, beta1=0.0)
 
                     current_batch_size = tf.gather(tf.shape(self._scores_with_negs), [0])
                     labels = tf.constant([0], tf.int64)
@@ -149,8 +149,7 @@ class QAModel:
             # form query from forward and backward compositions
             #query = tf.contrib.layers.fully_connected(tf.concat(1, [out_fw, out_bw]), self._size,
             #                                          activation_fn=None, weight_init=None)
-            query = out_fw + out_bw #tf.tanh(query)#, float(self._size))
-        # add supporting evidence to this query
+            query = out_fw + out_bw
         return query
 
     def _supporting_evidence(self, query):
@@ -181,10 +180,10 @@ class QAModel:
 
                 query_ids = tf.concat(0, [self._query_ids, self._collab_query_ids])
 
-                for i in range(self._max_queries):
-                    with vs.variable_scope("evidence"):
-                        vs.get_variable_scope()._reuse = \
-                                any(vs.get_variable_scope().name in v.name for v in tf.trainable_variables())
+                with vs.variable_scope("evidence"):
+                    for i in range(self._max_queries):
+                        if i > 2:
+                            vs.get_variable_scope().reuse_variables()
 
                         collab_queries = tf.gather(current_query, self._collab_query_ids)  # align supp_queries with queries
                         aligned_queries = tf.gather(current_query, self._query_ids)  # align queries
@@ -196,30 +195,28 @@ class QAModel:
                         norm = tf.unsorted_segment_sum(e_scores, query_ids, num_queries) + 0.00001 # for zero norms
                         norm = tf.reshape(norm, [-1, 1])
                         # this is basically the dot product between query and weighted supp_queries
-                        summed_scores = tf.unsorted_segment_sum(tf.reshape(e_scores * scores, [-1,1]),
-                                                                query_ids, num_queries) / norm
+                        weighted_score_sum = tf.unsorted_segment_sum(tf.reshape(e_scores * scores, [-1, 1]),
+                                                                     query_ids, num_queries) / norm
                         norm = tf.tile(norm, [1, self._size])
-                        #scores = tf.tile(tf.reshape(scores, [-1, 1]), [1, self._size])
                         e_scores = tf.tile(tf.reshape(e_scores, [-1, 1]), [1, self._size])
 
                         aligned_supp_answers_with_collab = tf.concat(0, [aligned_supp_answers, collab_queries])
                         weighted_answers = tf.unsorted_segment_sum(e_scores * aligned_supp_answers_with_collab,
                                                                    query_ids, num_queries) / norm
+
                         weighted_answers = tf.tanh(weighted_answers)
-                        #answer_weight = tf.contrib.layers.fully_connected(tf.concat(1, [weighted_queries,query]), self._size,
-                        #                                                  activation_fn=tf.nn.relu, weight_init=None,
-                        #                                                  bias_init=None)
-                        answer_weight = tf.contrib.layers.fully_connected(summed_scores, 1,
+                        answer_weight = tf.contrib.layers.fully_connected(weighted_score_sum, 1,
                                                                           activation_fn=tf.nn.sigmoid,
-                                                                          weight_init=tf.constant_initializer(0.0),
+                                                                          weight_init=tf.constant_initializer(1.0),
                                                                           bias_init=tf.constant_initializer(0.0))
 
-                        new_answer = weighted_answers * answer_weight + (1.0-answer_weight) * current_answers[-1]
+                        new_answer = weighted_answers * answer_weight + (1.0-answer_weight) * current_answers[i]
                         current_answers.append(tf.cond(tf.greater(self.num_queries, i),
-                                                      lambda: new_answer,
-                                                      lambda: current_answers[i]))
+                                                       lambda: new_answer,
+                                                       lambda: current_answers[i]))
 
                         if i < self._max_queries - 1:
+                            # prepare subsequent query
                             aligned_answers_input_with_collab = tf.concat(0, [aligned_answers_input, collab_queries])
                             weighted_answer_words = tf.unsorted_segment_sum(e_scores * aligned_answers_input_with_collab,
                                                                             query_ids, num_queries) / norm
@@ -234,7 +231,6 @@ class QAModel:
                                                                      bias_init=tf.constant_initializer(1))
                             current_query = gate * current_query + (1-gate) * c
 
-            tf.get_variable_scope().reuse_variables()
             return current_answers[-1]
 
     def _comp_f_fw(self, input, length):
@@ -302,25 +298,21 @@ class QAModel:
 
         self.supporting_qa = []
 
-    def _add_example(self, context_query, is_query=True):
+    def _add_example(self, context_queries, is_query=True):
         '''
-        :param context: list of symbol indices
-        :param starts: list of span starts to answer for
-        :param ends: list of span ends
-        :param answers: answer for respective aligned spans
-        :param neg_candidates: list of negative candidate indices
-        :param supporting_evidence: list of (context, positions)
+        :param context_queries: contains all queries about a particular context, see model.ContextQueries
+        :param is_query: True if this is query, False if this is supporting evidence
         :return:
         '''
-        assert is_query or context_query.supporting_evidence is None, "Supporting evidence cannot have supporting evidence!"
+        assert is_query or context_queries.supporting_evidence is None, "Supporting evidence cannot have supporting evidence!"
         if self._batch_idx >= self._batch_size:
             self._change_batch_size(max(self._batch_size*2, self._batch_idx))
-        self._ctxt[self._batch_idx][:len(context_query.context)] = context_query.context
-        self._len[self._batch_idx] = len(context_query.context)
+        self._ctxt[self._batch_idx][:len(context_queries.context)] = context_queries.context
+        self._len[self._batch_idx] = len(context_queries.context)
 
         batch_idx = self._batch_idx
         self._batch_idx += 1
-        for i, q in enumerate(context_query.queries):
+        for i, q in enumerate(context_queries.queries):
             self._s.append(q.start)
             self._e.append(q.end)
             self._span_ctxt.append(batch_idx)
@@ -332,16 +324,16 @@ class QAModel:
             self._query_part.append(0 if is_query else 1)
 
         if is_query:
-            if context_query.collaborative_support:
+            if context_queries.collaborative_support:
                 # save queries also as support, only with different query_partition index (1 for support)
-                for i, q in enumerate(context_query.queries):
-                    for j in range(len(context_query.queries)):
+                for i in range(len(context_queries.queries)):
+                    for j in range(len(context_queries.queries)):
                         if j != i:
                             self._collab_queries.append(self._query_idx+i)
                             self._collab_support.append(self._query_idx+j)
 
             ### add query specific supports ###
-            for i, q in enumerate(context_query.queries):
+            for i, q in enumerate(context_queries.queries):
                 if q.supporting_evidence is not None and self._max_queries > 0:
                     for qs in q.supporting_evidence:
                         start_idx = self._support_idx
@@ -359,13 +351,13 @@ class QAModel:
                             self._add_example(qs, is_query=False)
                         self._support_idx += len(qs.queries)
                         # align queries with support idxs
-                        self._support.extend(list(range(start_idx, self._support_idx)))
+                        self._support.extend(range(start_idx, self._support_idx))
                         self._queries.extend([self._query_idx] * len(qs.queries))
                 self._query_idx += 1
 
             ### add context specific support to all queries of this context ###
-            if context_query.supporting_evidence is not None and self._max_queries > 0:
-                for qs in context_query.supporting_evidence:
+            if context_queries.supporting_evidence is not None and self._max_queries > 0:
+                for qs in context_queries.supporting_evidence:
                     start_idx = self._support_idx
                     if qs.context is None:
                         for q in qs.queries:
@@ -380,14 +372,13 @@ class QAModel:
                         self._add_example(qs, is_query=False)
                     self._support_idx += len(qs.queries)
                     # this evidence supports all queries in this context
-                    for i, _ in enumerate(context_query.queries):
+                    for i, _ in enumerate(context_queries.queries):
                         # align queries with support idxs
-                        self._support.extend(list(range(start_idx, self._support_idx)))
-                        self._queries.extend([self._query_idx - len(context_query.queries) + i] * len(qs.queries))
+                        self._support.extend(range(start_idx, self._support_idx))
+                        self._queries.extend([self._query_idx - len(context_queries.queries) + i] * len(qs.queries))
         else:
-            for i, q in enumerate(context_query.queries):
+            for i, q in enumerate(context_queries.queries):
                 self.supporting_qa.append((q.context, q.start, q.end, q.answer))
-
 
     def _finish_adding_examples(self):
         max_cands = max((len(x) for x in self._answer_cands))

@@ -197,6 +197,9 @@ class FactKB:
     def fact_from_id(self, fact_id, dataset):
         return self.__kb.context(fact_id, dataset)
 
+    def fact_entities(self, fact_id, dataset):
+        return self.__entity_ctxt[dataset][fact_id], self.__entity_ctxt_span[dataset][fact_id]
+
     @property
     def kb(self):
         return self.__kb

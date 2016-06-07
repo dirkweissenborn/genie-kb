@@ -27,7 +27,6 @@ tf.app.flags.DEFINE_integer("max_iterations", -1, "Maximum number of batches dur
 tf.app.flags.DEFINE_integer("ckpt_its", 1000, "Number of iterations until running checkpoint. Negative means after every epoch.")
 tf.app.flags.DEFINE_integer("random_seed", 1234, "Seed for rng.")
 tf.app.flags.DEFINE_integer("subsample_validation", 10000, "number of facts to evaluate during validation.")
-tf.app.flags.DEFINE_integer("num_consecutive_queries", 1, "number of consecutive queries to supporting evidence.")
 #tf.app.flags.DEFINE_boolean("support", False, "Use supporting evidence.")
 tf.app.flags.DEFINE_string("devices", "/cpu:0", "Use this device.")
 tf.app.flags.DEFINE_string("save_dir", "save/" + time.strftime("%d%m%Y_%H%M%S", time.localtime()),
@@ -59,7 +58,7 @@ with tf.Session(config=config) as sess:
     print("Creating model ...")
     max_length = kb.max_context_length
     devices = FLAGS.devices.split(",")
-    m = QAModel(FLAGS.size, FLAGS.batch_size, len(kb.vocab), max_length,
+    m = QAModel(FLAGS.size, FLAGS.batch_size, len(kb.vocab), len(kb.vocab), max_length,
                 learning_rate=FLAGS.learning_rate, max_queries=FLAGS.max_queries,
                 devices=devices)
 
@@ -161,8 +160,8 @@ with tf.Session(config=config) as sess:
 
             accuracy = validate()
 
-    best_valid_mrr = max(previous_accs) if previous_accs else 0.0
-    print("Restore model to best on validation, with MRR: %.3f" % best_valid_mrr)
+    best_valid_acc = max(previous_accs) if previous_accs else 0.0
+    print("Restore model to best on validation, with Accuracy: %.3f" % best_valid_acc)
     m.saver.restore(sess, best_path[0])
     model_name = best_path[0].split("/")[-1]
 
