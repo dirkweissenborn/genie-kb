@@ -115,7 +115,10 @@ class QAModel:
 
     def _comp_f(self):
         with tf.device("/cpu:0"):
-            embedded = tf.nn.embedding_lookup(self.embeddings, tf.transpose(self._context))
+            max_length = tf.reduce_max(self._length)
+            context_t = tf.transpose(self._context)
+            context_t = tf.slice(context_t, [0, 0], tf.pack([max_length, -1]))
+            embedded = tf.nn.embedding_lookup(self.embeddings, context_t)
             batch_size = tf.shape(self._context)[0]
             batch_size_32 = tf.reshape(batch_size, [1])
             batch_size_64 = tf.cast(batch_size, tf.int64)
