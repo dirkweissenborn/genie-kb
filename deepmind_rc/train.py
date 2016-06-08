@@ -21,7 +21,7 @@ tf.app.flags.DEFINE_integer("num_queries", 1, "num queries to supporting evidenc
 
 # training
 tf.app.flags.DEFINE_float("learning_rate", 1e-3, "Learning rate.")
-tf.app.flags.DEFINE_float("learning_rate_decay", 0.9, "Learning rate decay when loss on validation set does not improve.")
+tf.app.flags.DEFINE_float("learning_rate_decay", 0.5, "Learning rate decay when loss on validation set does not improve.")
 tf.app.flags.DEFINE_integer("batch_size", 25, "Number of examples in each batch for training.")
 tf.app.flags.DEFINE_integer("max_iterations", -1, "Maximum number of batches during training. -1 means until convergence")
 tf.app.flags.DEFINE_integer("ckpt_its", 1000, "Number of iterations until running checkpoint. Negative means after every epoch.")
@@ -107,7 +107,7 @@ with tf.Session(config=config) as sess:
         if epoch >= 1 and acc <= previous_accs[-1] - 1e-3:  # if mrr is worse by a specific margin
             # if no significant improvement decay learningrate
             print("Decaying learningrate.")
-            sess.run(m.learning_rate_decay_op)
+            sess.run(m.learning_rate.assign(m.learning_rate * FLAGS.learning_rate_decay))
 
         previous_accs.append(acc)
 

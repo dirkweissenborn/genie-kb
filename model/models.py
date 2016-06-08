@@ -48,7 +48,6 @@ class QAModel:
 
                 if is_train:
                     self.learning_rate = tf.Variable(float(learning_rate), trainable=False, name="lr")
-                    self.learning_rate_decay_op = self.learning_rate.assign(self.learning_rate * 0.9)
                     self.global_step = tf.Variable(0, trainable=False, name="step")
 
                     self.opt = tf.train.AdamOptimizer(self.learning_rate)  #, beta1=0.0)
@@ -130,14 +129,12 @@ class QAModel:
                 init_state = tf.get_variable("init_state", [self._size], initializer=self._init)
                 init_state = tf.reshape(tf.tile(init_state, batch_size_32), [-1, self._size])
                 rev_embedded = tf.reverse_sequence(embedded, self._length, 0, 1)
-                #rev_e_inputs = [tf.reshape(e, [-1, self._size]) for e in tf.split(1, self._max_length, rev_embedded)]
+                # TIME-MAJOR: [T, B, S]
                 outs_bw = self._composition_function(rev_embedded, self._length - min_start, init_state)
-                #outs_bw.insert(0, init_state)
-                # reshape to all possible queries for all sequences. Dim[0]=batch_size*max_length+1.
+                # reshape to all possible queries for all sequences. Dim[0]=batch_size*(max_length+1).
                 # "+1" because we include the initial state
                 outs_bw = tf.reshape(tf.concat(0, [tf.expand_dims(init_state, 0), outs_bw]), [-1, self._size])
                 # gather respective queries via their lengths-start (because reversed sequence)
-                #  (with offset of context_index*(max_length+1))
                 lengths_aligned = tf.gather(self._length, self._span_context)
                 out_bw = tf.gather(outs_bw, (lengths_aligned - self._starts) * batch_size_64 + self._span_context)
 
@@ -147,11 +144,12 @@ class QAModel:
                 max_end = tf.segment_max(self._ends, self._span_context)
                 init_state = tf.get_variable("init_state", [self._size], initializer=self._init)
                 init_state = tf.reshape(tf.tile(init_state, batch_size_32), [-1, self._size])
+                # TIME-MAJOR: [T, B, S]
                 outs_fw = self._composition_function(embedded, max_end, init_state)
-                # reshape to all possible queries for all sequences. Dim[0]=batch_size*max_length+1.
+                # reshape to all possible queries for all sequences. Dim[0]=batch_size*(max_length+1).
                 # "+1" because we include the initial state
                 outs_fw = tf.reshape(tf.concat(0, [tf.expand_dims(init_state, 0), outs_fw]), [-1, self._size])
-                # gather respective queries via their positions (with offset of context_index*(max_length+1))
+                # gather respective queries via their positions (with offset of batch_size*ends)
                 out_fw = tf.gather(outs_fw, self._ends * batch_size_64 + self._span_context)
             # form query from forward and backward compositions
             #query = tf.contrib.layers.fully_connected(tf.concat(1, [out_fw, out_bw]), self._size,
@@ -469,17 +467,14 @@ class QAModel:
         :param mode:
         :return:
         '''
-        i = 0
-        while i < len(queries):
-            batch_size = min(self._batch_size, len(queries)-i)
-            self._start_adding_examples()
-            num_batch_queries = 0
-            for batch_idx in range(batch_size):
-                context_query = queries[batch_idx + i]
-                num_batch_queries += len(context_query.queries)
-                self._add_example(context_query)
-            self._finish_adding_examples()
-            i += batch_size
+        batch_size = len(queries)
+        self._start_adding_examples()
+        num_batch_queries = 0
+        for batch_idx in range(batch_size):
+            context_query = queries[batch_idx]
+            num_batch_queries += len(context_query.queries)
+            self._add_example(context_query)
+        self._finish_adding_examples()
 
         return sess.run(to_run, feed_dict=self._get_feed_dict())
 
