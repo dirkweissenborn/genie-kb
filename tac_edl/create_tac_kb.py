@@ -5,7 +5,7 @@ from multiprocessing.dummy import Pool
 import xml.etree.ElementTree
 import re
 from spacy.en import English
-import tac_edl.util as util
+import tac_edl as util
 dir = sys.argv[1]
 print("Read TAC KB from %s" % dir)
 out = sys.argv[2]

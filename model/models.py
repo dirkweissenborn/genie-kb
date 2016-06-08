@@ -212,7 +212,7 @@ class QAModel:
                         weighted_answers = tf.tanh(weighted_answers)
                         answer_weight = tf.contrib.layers.fully_connected(weighted_score_sum, 1,
                                                                           activation_fn=tf.nn.sigmoid,
-                                                                          weights_initializer=tf.constant_initializer(1.0),
+                                                                          weights_initializer=tf.constant_initializer(0.0),
                                                                           biases_initializer=tf.constant_initializer(0.0))
 
                         new_answer = weighted_answers * answer_weight + (1.0-answer_weight) * current_answers[i]

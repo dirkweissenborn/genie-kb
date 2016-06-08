@@ -3,7 +3,7 @@ import os
 import sys
 from multiprocessing.dummy import Pool
 from spacy.en import English
-import tac_edl.util as util
+import tac_edl as util
 
 query_file = sys.argv[1]
 print("Read Queries from %s" % query_file)
@@ -49,16 +49,8 @@ def add2kb(fn, queries):
     token_typs = []
     content = []
     within_tags = False
-    is_body = False
     while i < len(tokens):
         t = tokens[i]
-        if not is_body:
-            if t.text == "BODY":
-                is_body = True
-                i += 1
-            i += 1
-            continue
-
         if t.text == "<":
             within_tags = True
 
@@ -88,10 +80,10 @@ def add2kb(fn, queries):
 
         i += 1
 
-    kb.add(content, spans, entities, "TAC_EL:"+dataset)
-    kb.add(content, spans, typs, "TAC_ET:"+dataset)
+    kb.add(content, spans, entities, "TAC_EL/"+dataset)
+    kb.add(content, spans, typs, "TAC_ET/"+dataset)
     if with_ed:
-        kb.add(content, token_spans, token_typs, "TAC_ED:"+dataset)
+        kb.add(content, token_spans, token_typs, "TAC_ED/"+dataset)
 
     k[0] += 1
     sys.stdout.write("\r%.1f %% of %d files read ..." % (k[0]*100.0 / (num_files[0]), num_files[0]))
