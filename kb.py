@@ -30,6 +30,7 @@ class KB:
     def add(self, context, spans, answers=None, dataset="train"):
         self.__lock.acquire()
         try:
+            assert len(spans) > 0, 'each context should at least have one point of interest.'
             if dataset not in self.__contexts:
                 self.__contexts[dataset] = array('I')
                 self.__starts[dataset] = array('I')
@@ -80,7 +81,7 @@ class KB:
 
     def context(self, i, dataset="train"):
         offset = self.__context_offsets[dataset][i]
-        end = self.__context_offsets[dataset][i + 1] if i + 1 < len(self.__context_offsets[dataset]) else -1
+        end = self.__context_offsets[dataset][i + 1] if i + 1 < len(self.__context_offsets[dataset]) else len(self.__contexts[dataset])
         return self.__contexts[dataset][offset:end]
 
     def num_contexts(self, dataset):
@@ -88,12 +89,12 @@ class KB:
 
     def spans(self, i, dataset="train"):
         offset = self.__span_offsets[dataset][i]
-        end = self.__span_offsets[dataset][i + 1] if i + 1 < len(self.__span_offsets[dataset]) else -1
+        end = self.__span_offsets[dataset][i + 1] if i + 1 < len(self.__span_offsets[dataset]) else len(self.__starts[dataset])
         return self.__starts[dataset][offset:end], self.__ends[dataset][offset:end]
 
     def answers(self, i, dataset="train"):
         offset = self.__span_offsets[dataset][i]
-        end = self.__span_offsets[dataset][i + 1] if i + 1 < len(self.__span_offsets[dataset]) else -1
+        end = self.__span_offsets[dataset][i + 1] if i + 1 < len(self.__span_offsets[dataset]) else len(self.__answers[dataset])
         if self.__answers:
             return self.__answers[dataset][offset:end]
         else:
