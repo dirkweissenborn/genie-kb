@@ -51,7 +51,7 @@ class QAModel:
                     self.learning_rate = tf.Variable(float(learning_rate), trainable=False, name="lr")
                     self.global_step = tf.Variable(0, trainable=False, name="step")
 
-                    self.opt = tf.train.AdamOptimizer(self.learning_rate)  #, beta1=0.0)
+                    self.opt = tf.train.AdamOptimizer(self.learning_rate, beta1=0.0)
 
                     current_batch_size = tf.gather(tf.shape(self._scores_with_negs), [0])
                     labels = tf.constant([0], tf.int64)
