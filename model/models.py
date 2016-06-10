@@ -229,7 +229,7 @@ class QAModel:
                                                                             query_ids, num_queries) / norm
 
                             weighted_queries = tf.unsorted_segment_sum(e_scores * aligned_support, query_ids, num_queries) / norm
-                            c = tf.contrib.layers.fully_connected(tf.concat(1, [current_query, weighted_queries, weighted_answer_words]),
+                            c = tf.contrib.layers.fully_connected(tf.concat(1, [current_query, weighted_answer_words]),
                                                                   self._size, activation_fn=tf.tanh,
                                                                   weights_initializer=None, biases_initializer=None)
 
