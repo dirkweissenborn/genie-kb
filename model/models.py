@@ -176,6 +176,10 @@ class QAModel:
                         # used in multihop
                         answer_words = tf.nn.embedding_lookup(self.embeddings, supp_answer_word_ids)
                         aligned_answers_input = tf.gather(answer_words, self._support_ids)
+                        aligned_answers_input = tf.contrib.layers.fully_connected(aligned_answers_input, self._size,
+                                                                                  activation_fn=tf.tanh,
+                                                                                  weights_initializer=None,
+                                                                                  biases_initializer=None)
 
                 self.evidence_weights = []
                 current_answers = [query]
@@ -204,8 +208,7 @@ class QAModel:
                         # this is basically the dot product between query and weighted supp_queries
                         weighted_score_sum = tf.unsorted_segment_sum(tf.reshape(e_scores * scores, [-1, 1]),
                                                                      query_ids, num_queries) / norm
-                        norm = tf.tile(norm, [1, self._size])
-                        e_scores = tf.tile(tf.reshape(e_scores, [-1, 1]), [1, self._size])
+                        e_scores = tf.reshape(e_scores, [-1, 1])
 
                         aligned_supp_answers_with_collab = tf.concat(0, [aligned_supp_answers, collab_queries])
                         weighted_answers = tf.unsorted_segment_sum(e_scores * aligned_supp_answers_with_collab,
