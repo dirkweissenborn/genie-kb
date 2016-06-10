@@ -49,8 +49,6 @@ sampler = BatchSampler(kb, FLAGS.batch_size, FLAGS.tag+"_train", max_vocab=FLAGS
 
 train_dir = os.path.join(FLAGS.save_dir)
 
-i = 0
-
 valid_sampler = BatchSampler(kb, FLAGS.batch_size, FLAGS.tag+"_valid_2000ex", max_vocab=FLAGS.max_vocab)
 test_sampler = BatchSampler(kb, FLAGS.batch_size, FLAGS.tag+"_test_2500ex", max_vocab=FLAGS.max_vocab)
 
@@ -88,11 +86,11 @@ with tf.Session(config=config) as sess:
             print("Init embeddings with %s..." % FLAGS.embeddings)
             e = embeddings.load_embedding(FLAGS.embeddings)
             em = sess.run(m.embeddings)
-            for i in range(vocab_size):
-                w = kb.vocab[i]
+            for j in range(vocab_size):
+                w = kb.vocab[j]
                 v = e.get(w)
                 if v is not None:
-                    em[i] = v
+                    em[j] = v
             sess.run(m.embeddings.assign(em))
 
     print("Consecutive support lookup: %d" % FLAGS.num_queries)
@@ -130,7 +128,7 @@ with tf.Session(config=config) as sess:
     loss = 0.0
     step_time = 0.0
     epoch_acc = 0.0
-
+    i = 0
     while FLAGS.max_iterations < 0 or i < FLAGS.max_iterations:
         i += 1
         start_time = time.time()
