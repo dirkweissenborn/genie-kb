@@ -21,6 +21,7 @@ tf.app.flags.DEFINE_integer("num_queries", 1, "num queries to supporting evidenc
 tf.app.flags.DEFINE_integer("max_vocab", -1, "maximum vocabulary size")
 
 # training
+tf.app.flags.DEFINE_float("dropout", 0.0, "Dropout.")
 tf.app.flags.DEFINE_float("learning_rate", 1e-3, "Learning rate.")
 tf.app.flags.DEFINE_float("learning_rate_decay", 0.5, "Learning rate decay when loss on validation set does not improve.")
 tf.app.flags.DEFINE_integer("batch_size", 25, "Number of examples in each batch for training.")
@@ -61,7 +62,7 @@ with tf.Session(config=config) as sess:
     vocab_size = min(FLAGS.max_vocab+1, len(kb.vocab)) if FLAGS.max_vocab > 0 else len(kb.vocab)
     m = QAModel(FLAGS.size, FLAGS.batch_size, vocab_size, vocab_size, max_length,
                 learning_rate=FLAGS.learning_rate, max_queries=FLAGS.max_queries, devices=devices,
-                embedding_size=FLAGS.embedding_size)
+                keep_prob=1.0-FLAGS.dropout)
 
     print("Created model: " + m.name())
 
@@ -90,7 +91,7 @@ with tf.Session(config=config) as sess:
                 w = kb.vocab[j]
                 v = e.get(w)
                 if v is not None:
-                    em[j] = v
+                    em[j, :v.shape[0]] = v
             sess.run(m.embeddings.assign(em))
 
     print("Consecutive support lookup: %d" % FLAGS.num_queries)
@@ -121,6 +122,7 @@ with tf.Session(config=config) as sess:
             sess.run(m.learning_rate.assign(m.learning_rate * FLAGS.learning_rate_decay))
 
         previous_accs.append(acc)
+        m.set_train(sess)
 
         return acc
 
@@ -129,6 +131,7 @@ with tf.Session(config=config) as sess:
     step_time = 0.0
     epoch_acc = 0.0
     i = 0
+    m.set_train(sess)
     while FLAGS.max_iterations < 0 or i < FLAGS.max_iterations:
         i += 1
         start_time = time.time()

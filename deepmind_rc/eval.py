@@ -10,6 +10,7 @@ def rank_batch(sess, model, batch):
 
 
 def eval_dataset(sess, model, sampler, verbose=False):
+    model.set_eval(sess)
     sampler.reset()
     total = 0
     tp = 0

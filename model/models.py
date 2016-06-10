@@ -16,11 +16,11 @@ from model.query import *
 class QAModel:
 
     def __init__(self, size, batch_size, vocab_size, answer_vocab_size, max_length, is_train=True, learning_rate=1e-2,
-                 composition="GRU", max_queries=0, devices=None, embedding_size=None):
+                 composition="GRU", max_queries=0, devices=None, keep_prob=1.0):
         self._vocab_size = vocab_size
         self._max_length = max_length
         self._size = size
-        self._embedding_size = size if embedding_size is None else embedding_size
+        #self._embedding_size = size if embedding_size is None else embedding_size
         self._batch_size = batch_size
         self._is_train = is_train
         self._init = model.default_init()
@@ -33,9 +33,10 @@ class QAModel:
         with tf.device(self._device0):
             with vs.variable_scope(self.name(), initializer=tf.contrib.layers.xavier_initializer()):
                 self._init_inputs()
+                self.keep_prob = tf.get_variable("keep_prob", [], initializer=tf.constant_initializer(keep_prob))
                 with tf.device("/cpu:0"):
                     self.candidates = tf.get_variable("E_candidate", [answer_vocab_size, self._size], initializer=self._init)
-                    self.embeddings = tf.get_variable("E_words", [vocab_size, self._embedding_size], initializer=self._init)
+                    self.embeddings = tf.get_variable("E_words", [vocab_size, self._size], initializer=self._init)
                     answer, _ = tf.dynamic_partition(self._answer_input, self._query_partition, 2)
                     lookup_individual = tf.nn.embedding_lookup(self.candidates, answer)
                     cands,_ = tf.dynamic_partition(self._answer_candidates, self._query_partition, 2)
@@ -70,17 +71,6 @@ class QAModel:
                     else:
                         self._update = tf.assign_add(self.global_step, 1)
         self.saver = tf.train.Saver(tf.all_variables(), max_to_keep=1)
-
-    def __l2_normalize(self, x, factor=1.0, epsilon=1e-12, name=None):
-        with ops.op_scope([x], name, "l2_normalize") as name:
-            x = ops.convert_to_tensor(x, name="x")
-            square_sum = tf.reduce_sum(tf.square(x), [1], keep_dims=True)
-            # we change this to min (1, 1/norm)
-            x_inv_norm = tf.rsqrt(math_ops.maximum(square_sum, epsilon))
-            if factor != 1.0:
-                x_inv_norm = x_inv_norm * factor
-            x_inv_norm = tf.minimum(1.0, x_inv_norm)
-            return tf.mul(x, x_inv_norm, name=name)
 
     def _composition_function(self, inputs, length, init_state=None):
         if self._composition == "GRU":
@@ -119,6 +109,7 @@ class QAModel:
             context_t = tf.transpose(self._context)
             context_t = tf.slice(context_t, [0, 0], tf.pack([max_length, -1]))
             embedded = tf.nn.embedding_lookup(self.embeddings, context_t)
+            embedded = tf.nn.dropout(embedded, self.keep_prob)
             batch_size = tf.shape(self._context)[0]
             batch_size_32 = tf.reshape(batch_size, [1])
             batch_size_64 = tf.cast(batch_size, tf.int64)
@@ -158,6 +149,12 @@ class QAModel:
             query = out_fw + out_bw
         return query
 
+    def set_train(self, sess):
+        sess.run(self.keep_prob.initializer)
+
+    def set_eval(self, sess):
+        sess.run(self.keep_prob.assign(1.0))
+
     def _supporting_evidence(self, query):
         if self._max_queries == 0:
             return query
@@ -176,10 +173,6 @@ class QAModel:
                         # used in multihop
                         answer_words = tf.nn.embedding_lookup(self.embeddings, supp_answer_word_ids)
                         aligned_answers_input = tf.gather(answer_words, self._support_ids)
-                        aligned_answers_input = tf.contrib.layers.fully_connected(aligned_answers_input, self._size,
-                                                                                  activation_fn=tf.tanh,
-                                                                                  weights_initializer=None,
-                                                                                  biases_initializer=None)
 
                 self.evidence_weights = []
                 current_answers = [query]
