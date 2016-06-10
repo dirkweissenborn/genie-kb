@@ -64,5 +64,10 @@ if kb.num_contexts("train") == 0:
     print("")
     print("Pickle KB to %s" % out)
     kb.save(out)
+
+print("Order vocabulary by frequency...")
+kb.order_vocab_by_freq()
+print("Pickle KB to %s" % out)
+kb.save(out)
 print("Done")
 

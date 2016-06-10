@@ -1,8 +1,8 @@
 import os
 import time
 from kb import KB
-from deepmind_rc.sampler import *
-from deepmind_rc import eval
+from cbt.sampler import *
+from cbt import eval
 from model.models import QAModel
 import tensorflow as tf
 import sys
@@ -15,6 +15,7 @@ tf.app.flags.DEFINE_string('kb', None, 'Path to prepared RC KB.')
 
 # model
 tf.app.flags.DEFINE_integer("size", 256, "hidden size of model")
+tf.app.flags.DEFINE_integer("embedding_size", 100, "size of word embeddings")
 tf.app.flags.DEFINE_integer("max_queries", 2, "max queries to supporting evidence")
 tf.app.flags.DEFINE_integer("num_queries", 1, "num queries to supporting evidence")
 tf.app.flags.DEFINE_integer("max_vocab", -1, "maximum vocabulary size")
@@ -26,13 +27,13 @@ tf.app.flags.DEFINE_integer("batch_size", 25, "Number of examples in each batch 
 tf.app.flags.DEFINE_integer("max_iterations", -1, "Maximum number of batches during training. -1 means until convergence")
 tf.app.flags.DEFINE_integer("ckpt_its", 1000, "Number of iterations until running checkpoint. Negative means after every epoch.")
 tf.app.flags.DEFINE_integer("random_seed", 1234, "Seed for rng.")
-tf.app.flags.DEFINE_integer("subsample_validation", 10000, "number of facts to evaluate during validation.")
 #tf.app.flags.DEFINE_boolean("support", False, "Use supporting evidence.")
 tf.app.flags.DEFINE_string("devices", "/cpu:0", "Use this device.")
 tf.app.flags.DEFINE_string("save_dir", "save/" + time.strftime("%d%m%Y_%H%M%S", time.localtime()),
                            "Where to save model and its configuration, always last will be kept.")
 tf.app.flags.DEFINE_string("composition", None, "'LSTM', 'GRU', 'RNN', 'BoW', 'BiLSTM', 'BiGRU', 'BiRNN', 'Conv'")
 tf.app.flags.DEFINE_string("init_model_path", None, "Path to model to initialize from.")
+tf.app.flags.DEFINE_string("tag", "NE", "Tag of training set. Possible values are 'CN', 'NE', 'P', 'V'.")
 tf.app.flags.DEFINE_string("embeddings", None, "Init with word embeddings from given path in w2v binary format.")
 
 FLAGS = tf.app.flags.FLAGS
@@ -44,14 +45,14 @@ print("Loading KB ...")
 kb = KB()
 kb.load(FLAGS.kb)
 
-sampler = BatchSampler(kb, FLAGS.batch_size, "train", max_vocab=FLAGS.max_vocab)
+sampler = BatchSampler(kb, FLAGS.batch_size, FLAGS.tag+"_train", max_vocab=FLAGS.max_vocab)
 
 train_dir = os.path.join(FLAGS.save_dir)
 
 i = 0
 
-valid_sampler = BatchSampler(kb, FLAGS.batch_size, "valid", FLAGS.subsample_validation, max_vocab=FLAGS.max_vocab)
-test_sampler = BatchSampler(kb, FLAGS.batch_size, "test", max_vocab=FLAGS.max_vocab)
+valid_sampler = BatchSampler(kb, FLAGS.batch_size, FLAGS.tag+"_valid_2000ex", max_vocab=FLAGS.max_vocab)
+test_sampler = BatchSampler(kb, FLAGS.batch_size, FLAGS.tag+"_test_2500ex", max_vocab=FLAGS.max_vocab)
 
 config = tf.ConfigProto(allow_soft_placement=True)
 config.gpu_options.allow_growth = True
@@ -60,9 +61,9 @@ with tf.Session(config=config) as sess:
     max_length = kb.max_context_length
     devices = FLAGS.devices.split(",")
     vocab_size = min(FLAGS.max_vocab+1, len(kb.vocab)) if FLAGS.max_vocab > 0 else len(kb.vocab)
-    m = QAModel(FLAGS.size, FLAGS.batch_size, vocab_size, len(kb.answer_vocab), max_length,
-                learning_rate=FLAGS.learning_rate, max_queries=FLAGS.max_queries,
-                devices=devices)
+    m = QAModel(FLAGS.size, FLAGS.batch_size, vocab_size, vocab_size, max_length,
+                learning_rate=FLAGS.learning_rate, max_queries=FLAGS.max_queries, devices=devices,
+                embedding_size=FLAGS.embedding_size)
 
     print("Created model: " + m.name())
 

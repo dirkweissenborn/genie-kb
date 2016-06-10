@@ -1,6 +1,6 @@
 import random
 from model.query import *
-
+from cbt import *
 
 class BatchSampler:
 
@@ -45,28 +45,30 @@ class BatchSampler:
             self.reset()
 
         batch_queries = []
-        splitter = self.kb.id("||")
+        splitter = self.kb.id(answer_sep)
         for i in range(self.batch_size):
             ctxt = self.kb.context(self.todo[i], self.which_set)
+            k = ctxt.index(splitter)
             if self.max_vocab > 0:
                 ctxt = [min(self.max_vocab, i) for i in ctxt]
-            k = len(ctxt)-1
-            while ctxt[k] != splitter:
-                k -= 1
             # < k: supporting evidence; >k: query
             # we switch start and end here, because entities are anonymized -> consider only outer context
             ends, starts = self.kb.spans(self.todo[i], self.which_set)
             answers = self.kb.answers(self.todo[i], self.which_set)
-            #word vocab and answer vocab differ
-            answer_words = [min(self.max_vocab, self.kb.answer_id_to_word_id(a))
-                            if self.max_vocab > 0 else self.kb.answer_id_to_word_id(a) for a in answers]
+            # in cbt all words are potential answers so use word vocab instead of answer vocab
+            answers = [min(self.max_vocab, self.kb.answer_id_to_word_id(a))
+                       if self.max_vocab > 0 else self.kb.answer_id_to_word_id(a) for a in answers]
+
+            candidates = ctxt[k+1:]
+            cand_set = set(candidates)
+            ctxt = ctxt[:k]
             supp_queries = []
-            for i in range(len(starts)):
-                if starts[i] < k:
-                    supp_queries.append(ContextQuery(None, starts[i], ends[i], answers[i], answer_words[i], None))
+            for start, c in enumerate(ctxt):
+                if c in cand_set:
+                    supp_queries.append(ContextQuery(None, start, start+1, c, c, None))
             supp_queries = ContextQueries(None, supp_queries)
-            neg_cands = list(set((c for c in answers if c != answers[-1])))
-            query = ContextQuery(ctxt, starts[-1], ends[-1], answers[-1], answer_words[-1], neg_cands, supporting_evidence=[supp_queries])
+            neg_cands = [c for c in candidates if c != answers[-1]]
+            query = ContextQuery(ctxt, starts[-1], ends[-1], answers[-1], answers[-1], neg_cands, supporting_evidence=[supp_queries])
             batch_queries.append(ContextQueries(ctxt, [query]))
         self.todo = self.todo[self.batch_size:]
         self.count += 1

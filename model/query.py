@@ -13,11 +13,12 @@ class ContextQueries:
 
 class ContextQuery:
 
-    def __init__(self, context, start, end, answer, neg_candidates, supporting_evidence=None):
+    def __init__(self, context, start, end, answer, answer_word, neg_candidates, supporting_evidence=None):
         self.context = context
         self.start = start
         self.end = end
         self.answer = answer
+        self.answer_word = answer_word
         self.neg_candidates = neg_candidates
         self.supporting_evidence = supporting_evidence
 

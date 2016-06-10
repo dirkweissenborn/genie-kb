@@ -1,7 +1,7 @@
 import pickle
 from array import array
 from threading import Lock
-
+import numpy as np
 
 class KB:
     """
@@ -21,14 +21,24 @@ class KB:
         self.__span_offsets = dict()
         # holds list of all symbols
         self.__vocab = list()
+        self.__answer_vocab = list()
+        # holds list of symbol frequencies
+        self.__count = list()
+        self.__answer_count = list()
         # holds mappings of symbols to indices in every dimension
         self.__ids = dict()
+        self.__answer_ids = dict()
+        # additional information
         self.__max_context_length = 0
         self.__max_span_length = 0
+        # is ordered
+        self.__ordered = False
+        #lock for multi-threaded add
         self.__lock = Lock()
 
     def add(self, context, spans, answers=None, dataset="train"):
         self.__lock.acquire()
+        self.__ordered = False
         try:
             assert len(spans) > 0, 'each context should at least have one point of interest.'
             if dataset not in self.__contexts:
@@ -46,9 +56,11 @@ class KB:
                 self.__starts[dataset].append(span[0])
                 self.__ends[dataset].append(span[1])
             if answers is not None and self.__answers:
-                assert len(answers) == len(spans), "answers must align with spans"
+                assert len(answers) == len(spans), "answers must tail -f align with spans"
                 for answer in answers:
-                    self.__answers[dataset].append(self.__add_to_vocab(answer))
+                    self.__answers[dataset].append(self.__add_to_answer_vocab(answer))
+                    # add answers also to normal vocabulary
+                    self.__add_to_vocab(answer)
             self.__max_context_length = max(self.__max_context_length, len(context))
             self.__max_span_length = max(self.__max_span_length, len(spans))
         finally:
@@ -59,7 +71,21 @@ class KB:
         if key not in self.__ids:
             self.__ids[key] = len(self.__vocab)
             self.__vocab.append(key)
-        return self.__ids[key]
+            self.__count.append(0)
+
+        i = self.__ids[key]
+        self.__count[i] += 1
+        return i
+
+    def __add_to_answer_vocab(self, key):
+        if key not in self.__answer_ids:
+            self.__answer_ids[key] = len(self.__answer_vocab)
+            self.__answer_vocab.append(key)
+            self.__answer_count.append(0)
+
+        i = self.__answer_ids[key]
+        self.__answer_count[i] += 1
+        return i
 
     def save(self, file):
         with open(file, 'wb') as f:
@@ -70,14 +96,18 @@ class KB:
             self.load_values(pickle.load(f))
 
     def load_values(self, values):
-        [self.__contexts, self.__starts, self.__ends, self.__answers, self.__vocab, self.__ids,
-         self.__context_offsets, self.__span_offsets,
+        [self.__contexts, self.__starts, self.__ends, self.__answers,
+         self.__vocab, self.__ids, self.__answer_vocab, self.__answer_ids,
+         self.__count, self.__answer_count,
+         self.__context_offsets, self.__span_offsets, self.__ordered,
          self.__max_context_length, self.__max_span_length] = values
 
     def values(self):
-        return [self.__contexts, self.__starts, self.__ends, self.__answers, self.__vocab, self.__ids,
-         self.__context_offsets, self.__span_offsets,
-         self.__max_context_length, self.__max_span_length]
+        return [self.__contexts, self.__starts, self.__ends, self.__answers,
+                self.__vocab, self.__ids, self.__answer_vocab, self.__answer_ids,
+                self.__count, self.__answer_count,
+                self.__context_offsets, self.__span_offsets, self.__ordered,
+                self.__max_context_length, self.__max_span_length]
 
     def context(self, i, dataset="train"):
         offset = self.__context_offsets[dataset][i]
@@ -101,8 +131,9 @@ class KB:
             # if now answers provided used starts as answers
             return [self.context(dataset, i)[p] for p in self.__starts[dataset][offset * 2:end * 2]]
 
-    def id(self, word, fallback=-1):
-        return self.__ids.get(word, fallback)
+    def answer_id_to_word_id(self, answer_id):
+        w = self.answer_vocab[answer_id]
+        return self.id(w)
 
     def iter_contexts(self, dataset="train"):
         for i in range(len(self.__context_offsets[dataset])):
@@ -124,9 +155,42 @@ class KB:
     def max_span_length(self):
         return self.__max_span_length
 
+    def id(self, word, fallback=-1):
+        return self.__ids.get(word, fallback)
+
     @property
     def vocab(self):
         return self.__vocab
+
+    def answer_id(self, answer, fallback=-1):
+        return self.__answer_ids.get(answer, fallback)
+
+    @property
+    def answer_vocab(self):
+        return self.__answer_vocab
+
+    def order_vocab_by_freq(self):
+        if not self.__ordered:
+            sorted = np.argsort(self.__count)[::-1]
+            mapping = [0 for _ in range(len(self.__vocab))]
+            new_vocab = []
+            new_counts = []
+            for i, k in enumerate(sorted):
+                mapping[k] = i
+                new_vocab.append(self.__vocab[k])
+                new_counts.append(self.__count[k])
+
+            self.__vocab = new_vocab
+            self.__count = new_counts
+
+            for w, i in self.__ids.items():
+                self.__ids[w] = mapping[i]
+
+            for _, ctxt in self.__contexts.items():
+                for i in range(len(ctxt)):
+                    ctxt[i] = mapping[ctxt[i]]
+
+            self.__ordered = True
 
 
 class FactKB:

@@ -16,10 +16,11 @@ from model.query import *
 class QAModel:
 
     def __init__(self, size, batch_size, vocab_size, answer_vocab_size, max_length, is_train=True, learning_rate=1e-2,
-                 composition="GRU", max_queries=0, devices=None):
+                 composition="GRU", max_queries=0, devices=None, embedding_size=None):
         self._vocab_size = vocab_size
         self._max_length = max_length
         self._size = size
+        self._embedding_size = size if embedding_size is None else embedding_size
         self._batch_size = batch_size
         self._is_train = is_train
         self._init = model.default_init()
@@ -34,7 +35,7 @@ class QAModel:
                 self._init_inputs()
                 with tf.device("/cpu:0"):
                     self.candidates = tf.get_variable("E_candidate", [answer_vocab_size, self._size], initializer=self._init)
-                    self.embeddings = tf.get_variable("E_words", [vocab_size, self._size], initializer=self._init)
+                    self.embeddings = tf.get_variable("E_words", [vocab_size, self._embedding_size], initializer=self._init)
                     answer, _ = tf.dynamic_partition(self._answer_input, self._query_partition, 2)
                     lookup_individual = tf.nn.embedding_lookup(self.candidates, answer)
                     cands,_ = tf.dynamic_partition(self._answer_candidates, self._query_partition, 2)
@@ -167,12 +168,13 @@ class QAModel:
                 
                 with tf.device("/cpu:0"):
                     _, supp_answer_ids = tf.dynamic_partition(self._answer_input, self._query_partition, 2)
+                    _, supp_answer_word_ids = tf.dynamic_partition(self._answer_word_input, self._query_partition, 2)
                     supp_answers = tf.nn.embedding_lookup(self.candidates, supp_answer_ids)
                     aligned_supp_answers = tf.gather(supp_answers, self._support_ids)  # and with respective answers
 
                     if self._max_queries > 1:
                         # used in multihop
-                        answer_words = tf.nn.embedding_lookup(self.embeddings, supp_answer_ids)
+                        answer_words = tf.nn.embedding_lookup(self.embeddings, supp_answer_word_ids)
                         aligned_answers_input = tf.gather(answer_words, self._support_ids)
 
                 self.evidence_weights = []
@@ -227,7 +229,7 @@ class QAModel:
                                                                             query_ids, num_queries) / norm
 
                             weighted_queries = tf.unsorted_segment_sum(e_scores * aligned_support, query_ids, num_queries) / norm
-                            c = tf.contrib.layers.fully_connected(tf.concat(1, [current_query, weighted_answer_words]),
+                            c = tf.contrib.layers.fully_connected(tf.concat(1, [current_query, weighted_queries, weighted_answer_words]),
                                                                   self._size, activation_fn=tf.tanh,
                                                                   weights_initializer=None, biases_initializer=None)
 
@@ -255,6 +257,8 @@ class QAModel:
             self._context = tf.placeholder(tf.int64, shape=[None, self._max_length], name="context")
             self._answer_candidates = tf.placeholder(tf.int64, shape=[None, None], name="candidates")
             self._answer_input = tf.placeholder(tf.int64, shape=[None], name="answer")
+            # answer word ids (index to E_embeddings) might differ from answer ids (input to E_candidates)
+            self._answer_word_input = tf.placeholder(tf.int64, shape=[None], name="answer_word")
             self._starts = tf.placeholder(tf.int64, shape=[None], name="span_start")
             self._ends = tf.placeholder(tf.int64, shape=[None], name="span_end")
             # holds batch idx for respective span
@@ -293,6 +297,7 @@ class QAModel:
         self._support_idx = 0
         self._answer_cands = []
         self._answer_in = []
+        self._answer_word_in = []
         self._s = []
         self._e = []
         self._span_ctxt = []
@@ -324,6 +329,7 @@ class QAModel:
             self._e.append(q.end)
             self._span_ctxt.append(batch_idx)
             self._answer_in.append(q.answer)
+            self._answer_word_in.append(q.answer_word)
             cands = [q.answer]
             if q.neg_candidates is not None and q.neg_candidates is not None:
                 cands.extend(q.neg_candidates)
@@ -351,6 +357,7 @@ class QAModel:
                                 self._e.append(q.end)
                                 self._span_ctxt.append(batch_idx)
                                 self._answer_in.append(q.answer)
+                                self._answer_word_in.append(q.answer_word)
                                 self._answer_cands.append([q.answer])
                                 self._query_part.append(1)
                                 self.supporting_qa.append((q.context, q.start, q.end, q.answer))
@@ -372,6 +379,7 @@ class QAModel:
                             self._e.append(q.end)
                             self._span_ctxt.append(batch_idx)
                             self._answer_in.append(q.answer)
+                            self._answer_word_in.append(q.answer_word)
                             self._answer_cands.append([q.answer])
                             self._query_part.append(1)
                             self.supporting_qa.append((q.context, q.start, q.end, q.answer))
@@ -411,6 +419,7 @@ class QAModel:
         self._feed_dict[self._ends] = self._e
         self._feed_dict[self._span_context] = self._span_ctxt
         self._feed_dict[self._answer_input] = self._answer_in
+        self._feed_dict[self._answer_word_input] = self._answer_word_in
         self._feed_dict[self._answer_candidates] = self._answer_cands
         self._feed_dict[self._candidate_mask] = cand_mask
         self._feed_dict[self._query_ids] = self._queries
@@ -486,17 +495,17 @@ def test_model():
     # and respective negative candidates for each position
     contexts =       [[0, 1, 2]       , [1, 2, 0], [0, 2, 1]]  # 4 => placeholder for prediction position
 
-    queries = [ContextQueries(contexts[0], [ContextQuery(contexts[0], 0,1,0,[2,1]),
-                                            ContextQuery(contexts[0], 2,3,2,[0,1])]),
-               ContextQueries(contexts[1], [ContextQuery(contexts[1], 1,2,2,[0,1])]),
-               ContextQueries(contexts[2], [ContextQuery(contexts[2], 1,2,2,[0,2]),
-                                            ContextQuery(contexts[2], 2,3,1,[0,1])])]
+    queries = [ContextQueries(contexts[0], [ContextQuery(contexts[0], 0,1,0,0,[2,1]),
+                                            ContextQuery(contexts[0], 2,3,2,2,[0,1])]),
+               ContextQueries(contexts[1], [ContextQuery(contexts[1], 1,2,2,2,[0,1])]),
+               ContextQueries(contexts[2], [ContextQuery(contexts[2], 1,2,2,2,[0,2]),
+                                            ContextQuery(contexts[2], 2,3,1,1,[0,1])])]
 
-    queries = [ContextQueries(contexts[0], [ContextQuery(contexts[0], 0,1,0,[2,1]),
-                                            ContextQuery(contexts[0], 2,3,2,[0,1])], collaborative_support=True),
-               ContextQueries(contexts[1], [ContextQuery(contexts[1], 1,2,2,[0,1], queries)]),
-               ContextQueries(contexts[2], [ContextQuery(contexts[2], 1,2,1,[0,2], queries),
-                                            ContextQuery(contexts[2], 2,3,2,[0,1])], queries)]
+    queries = [ContextQueries(contexts[0], [ContextQuery(contexts[0], 0,1,0,0,[2,1]),
+                                            ContextQuery(contexts[0], 2,3,2,2,[0,1])], collaborative_support=True),
+               ContextQueries(contexts[1], [ContextQuery(contexts[1], 1,2,2,2,[0,1], queries)]),
+               ContextQueries(contexts[2], [ContextQuery(contexts[2], 1,2,1,1,[0,2], queries),
+                                            ContextQuery(contexts[2], 2,3,2,2,[0,1])], queries)]
 
     with tf.Session() as sess:
         sess.run(tf.initialize_all_variables())
