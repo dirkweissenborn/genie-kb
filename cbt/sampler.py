@@ -65,7 +65,7 @@ class BatchSampler:
             supp_queries = []
             for start, c in enumerate(ctxt):
                 if c in cand_set:
-                    supp_queries.append(ContextQuery(None, start, start+1, c, c, None))
+                    supp_queries.append(ContextQuery(None, start+1, start, c, c, None))
             supp_queries = ContextQueries(None, supp_queries)
             neg_cands = [c for c in candidates if c != answers[-1]]
             query = ContextQuery(ctxt, starts[-1], ends[-1], answers[-1], answers[-1], neg_cands, supporting_evidence=[supp_queries])

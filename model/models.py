@@ -66,7 +66,8 @@ class QAModel:
                     self._grads = tf.gradients(self._loss, train_params, self.training_weight, colocate_gradients_with_ops=True)
 
                     if len(train_params) > 0:
-                        self._update = self.opt.apply_gradients(zip(self._grads, train_params),
+                        grads, _ = tf.clip_by_global_norm(self._grads, 5.0)
+                        self._update = self.opt.apply_gradients(zip(grads, train_params),
                                                                 global_step=self.global_step)
                     else:
                         self._update = tf.assign_add(self.global_step, 1)
@@ -144,9 +145,10 @@ class QAModel:
                 # gather respective queries via their positions (with offset of batch_size*ends)
                 out_fw = tf.gather(outs_fw, self._ends * batch_size_64 + self._span_context)
             # form query from forward and backward compositions
-            #query = tf.contrib.layers.fully_connected(tf.concat(1, [out_fw, out_bw]), self._size,
-            #                                          activation_fn=None, weight_init=None)
-            query = out_fw + out_bw
+            query = tf.contrib.layers.fully_connected(tf.concat(1, [out_fw, out_bw]), self._size,
+                                                      activation_fn=None, weights_initializer=None, biases_initializer=None)
+            query = tf.add_n([query, out_bw, out_fw])
+            #query = tf.concat(1, [out_fw, out_bw])
         return query
 
     def set_train(self, sess):
@@ -186,13 +188,13 @@ class QAModel:
 
                 with vs.variable_scope("evidence"):
                     for i in range(self._max_queries):
-                        if i > 2:
+                        if i > 0:
                             vs.get_variable_scope().reuse_variables()
-
+                        
                         collab_queries = tf.gather(current_query, self._collab_query_ids)  # align supp_queries with queries
                         aligned_queries = tf.gather(current_query, self._query_ids)  # align queries
                         aligned_queries = tf.concat(0, [aligned_queries, collab_queries])
-
+                            
                         scores = tf_util.batch_dot(aligned_queries, aligned_support)
                         self.evidence_weights.append(scores)
                         e_scores = tf.exp(scores - tf.reduce_max(scores, [0], keep_dims=True))
@@ -211,7 +213,7 @@ class QAModel:
                         answer_weight = tf.contrib.layers.fully_connected(weighted_score_sum, 1,
                                                                           activation_fn=tf.nn.sigmoid,
                                                                           weights_initializer=tf.constant_initializer(0.0),
-                                                                          biases_initializer=tf.constant_initializer(0.0))
+                                                                          biases_initializer=tf.constant_initializer(0.0), scope="answer_weight")
 
                         new_answer = weighted_answers * answer_weight + (1.0-answer_weight) * current_answers[i]
                         current_answers.append(tf.cond(tf.greater(self.num_queries, i),
@@ -226,12 +228,12 @@ class QAModel:
 
                             weighted_queries = tf.unsorted_segment_sum(e_scores * aligned_support, query_ids, num_queries) / norm
                             c = tf.contrib.layers.fully_connected(tf.concat(1, [current_query, weighted_answer_words]),
-                                                                  self._size, activation_fn=tf.tanh,
+                                                                  self._size, activation_fn=tf.tanh, scope="update_candidate",
                                                                   weights_initializer=None, biases_initializer=None)
 
                             gate = tf.contrib.layers.fully_connected(tf.concat(1, [current_query, weighted_queries]),
                                                                      self._size, activation_fn=tf.sigmoid,
-                                                                     weights_initializer=None,
+                                                                     weights_initializer=None, scope="update_gate",
                                                                      biases_initializer=tf.constant_initializer(1))
                             current_query = gate * current_query + (1-gate) * c
 
