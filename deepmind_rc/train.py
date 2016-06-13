@@ -15,25 +15,23 @@ tf.app.flags.DEFINE_string('kb', None, 'Path to prepared RC KB.')
 
 # model
 tf.app.flags.DEFINE_integer("size", 256, "hidden size of model")
-tf.app.flags.DEFINE_integer("embedding_size", 100, "size of word embeddings")
 tf.app.flags.DEFINE_integer("max_queries", 2, "max queries to supporting evidence")
 tf.app.flags.DEFINE_integer("num_queries", 1, "num queries to supporting evidence")
 tf.app.flags.DEFINE_integer("max_vocab", -1, "maximum vocabulary size")
-
-# training
 tf.app.flags.DEFINE_float("dropout", 0.0, "Dropout.")
 tf.app.flags.DEFINE_float("learning_rate", 1e-3, "Learning rate.")
 tf.app.flags.DEFINE_float("learning_rate_decay", 0.5, "Learning rate decay when loss on validation set does not improve.")
 tf.app.flags.DEFINE_integer("batch_size", 25, "Number of examples in each batch for training.")
+tf.app.flags.DEFINE_string("devices", "/cpu:0", "Use this device.")
+tf.app.flags.DEFINE_string("composition", None, "'LSTM', 'GRU', 'RNN', 'BoW', 'BiLSTM', 'BiGRU', 'BiRNN', 'Conv'")
+
+#training
 tf.app.flags.DEFINE_integer("max_iterations", -1, "Maximum number of batches during training. -1 means until convergence")
 tf.app.flags.DEFINE_integer("ckpt_its", 1000, "Number of iterations until running checkpoint. Negative means after every epoch.")
 tf.app.flags.DEFINE_integer("random_seed", 1234, "Seed for rng.")
-tf.app.flags.DEFINE_integer("subsample_validation", 10000, "number of facts to evaluate during validation.")
-#tf.app.flags.DEFINE_boolean("support", False, "Use supporting evidence.")
-tf.app.flags.DEFINE_string("devices", "/cpu:0", "Use this device.")
+tf.app.flags.DEFINE_integer("subsample_validation", -1, "number of facts to evaluate during validation.")
 tf.app.flags.DEFINE_string("save_dir", "save/" + time.strftime("%d%m%Y_%H%M%S", time.localtime()),
                            "Where to save model and its configuration, always last will be kept.")
-tf.app.flags.DEFINE_string("composition", None, "'LSTM', 'GRU', 'RNN', 'BoW', 'BiLSTM', 'BiGRU', 'BiRNN', 'Conv'")
 tf.app.flags.DEFINE_string("init_model_path", None, "Path to model to initialize from.")
 tf.app.flags.DEFINE_string("embeddings", None, "Init with word embeddings from given path in w2v binary format.")
 

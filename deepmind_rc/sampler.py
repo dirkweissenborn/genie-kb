@@ -1,6 +1,6 @@
 import random
 from model.query import *
-
+import math
 
 class BatchSampler:
 
@@ -12,7 +12,7 @@ class BatchSampler:
         self.max_vocab = max_vocab
         if max_contexts > 0:
             self.num_contexts = min(max_contexts, self.num_contexts)
-        self.epoch_size = self.num_contexts // self.batch_size
+        self.epoch_size = math.ceil(self.num_contexts / self.batch_size)
         self._rng = random.Random(73642)
         self.reset()
 
@@ -46,7 +46,7 @@ class BatchSampler:
 
         batch_queries = []
         splitter = self.kb.id("||")
-        for i in range(self.batch_size):
+        for i in range(min(self.batch_size, len(self.todo))):
             ctxt = self.kb.context(self.todo[i], self.which_set)
             if self.max_vocab > 0:
                 ctxt = [min(self.max_vocab, i) for i in ctxt]

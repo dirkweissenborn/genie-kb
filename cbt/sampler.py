@@ -1,6 +1,7 @@
 import random
 from model.query import *
 from cbt import *
+import math
 
 class BatchSampler:
 
@@ -12,7 +13,7 @@ class BatchSampler:
         self.max_vocab = max_vocab
         if max_contexts > 0:
             self.num_contexts = min(max_contexts, self.num_contexts)
-        self.epoch_size = self.num_contexts // self.batch_size
+        self.epoch_size = math.ceil(self.num_contexts / self.batch_size)
         self._rng = random.Random(73642)
         self.reset()
 
@@ -46,13 +47,13 @@ class BatchSampler:
 
         batch_queries = []
         splitter = self.kb.id(answer_sep)
-        for i in range(self.batch_size):
+        for i in range(min(self.batch_size, len(self.todo))):
             ctxt = self.kb.context(self.todo[i], self.which_set)
             k = ctxt.index(splitter)
             if self.max_vocab > 0:
                 ctxt = [min(self.max_vocab, i) for i in ctxt]
             # < k: supporting evidence; >k: query
-            # we switch start and end here, because entities are anonymized -> consider only outer context
+            # we switch start and end here, because placeholder is anonymized -> consider only outer context
             ends, starts = self.kb.spans(self.todo[i], self.which_set)
             answers = self.kb.answers(self.todo[i], self.which_set)
             # in cbt all words are potential answers so use word vocab instead of answer vocab
