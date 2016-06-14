@@ -118,32 +118,32 @@ class QAModel:
         with tf.device(self._device1):
             #use other device for backward rnn
             with vs.variable_scope("backward"):
-                min_start = tf.segment_min(self._starts, self._span_context)
+                min_end = tf.segment_min(self._ends, self._span_context)
                 init_state = tf.get_variable("init_state", [self._size], initializer=self._init)
                 init_state = tf.reshape(tf.tile(init_state, batch_size_32), [-1, self._size])
                 rev_embedded = tf.reverse_sequence(embedded, self._length, 0, 1)
                 # TIME-MAJOR: [T, B, S]
-                outs_bw = self._composition_function(rev_embedded, self._length - min_start, init_state)
+                outs_bw = self._composition_function(rev_embedded, self._length - min_end, init_state)
                 # reshape to all possible queries for all sequences. Dim[0]=batch_size*(max_length+1).
                 # "+1" because we include the initial state
                 outs_bw = tf.reshape(tf.concat(0, [tf.expand_dims(init_state, 0), outs_bw]), [-1, self._size])
                 # gather respective queries via their lengths-start (because reversed sequence)
                 lengths_aligned = tf.gather(self._length, self._span_context)
-                out_bw = tf.gather(outs_bw, (lengths_aligned - self._starts) * batch_size_64 + self._span_context)
+                out_bw = tf.gather(outs_bw, (lengths_aligned - self._ends) * batch_size_64 + self._span_context)
 
         with tf.device(self._device2):
             with vs.variable_scope("forward"):
                 #e_inputs = [tf.reshape(e, [-1, self._size]) for e in tf.split(1, self._max_length, embedded)]
-                max_end = tf.segment_max(self._ends, self._span_context)
+                max_start = tf.segment_max(self._starts, self._span_context)
                 init_state = tf.get_variable("init_state", [self._size], initializer=self._init)
                 init_state = tf.reshape(tf.tile(init_state, batch_size_32), [-1, self._size])
                 # TIME-MAJOR: [T, B, S]
-                outs_fw = self._composition_function(embedded, max_end, init_state)
+                outs_fw = self._composition_function(embedded, max_start, init_state)
                 # reshape to all possible queries for all sequences. Dim[0]=batch_size*(max_length+1).
                 # "+1" because we include the initial state
                 outs_fw = tf.reshape(tf.concat(0, [tf.expand_dims(init_state, 0), outs_fw]), [-1, self._size])
                 # gather respective queries via their positions (with offset of batch_size*ends)
-                out_fw = tf.gather(outs_fw, self._ends * batch_size_64 + self._span_context)
+                out_fw = tf.gather(outs_fw, self._starts * batch_size_64 + self._span_context)
             # form query from forward and backward compositions
             query = tf.contrib.layers.fully_connected(tf.concat(1, [out_fw, out_bw]), self._size,
                                                       activation_fn=None, weights_initializer=None, biases_initializer=None)

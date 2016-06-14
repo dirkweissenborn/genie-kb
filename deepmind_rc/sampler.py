@@ -19,8 +19,6 @@ class BatchSampler:
     def reset(self):
         self.todo = list(range(self.num_contexts))
         self._rng.shuffle(self.todo)
-        if self.num_contexts % self.batch_size != 0:
-            self.todo = self.todo[:-(self.num_contexts % self.batch_size)]
         self.count = 0
 
     def end_of_epoch(self):
@@ -55,7 +53,7 @@ class BatchSampler:
                 k -= 1
             # < k: supporting evidence; >k: query
             # we switch start and end here, because entities are anonymized -> consider only outer context
-            ends, starts = self.kb.spans(self.todo[i], self.which_set)
+            starts, ends = self.kb.spans(self.todo[i], self.which_set)
             answers = self.kb.answers(self.todo[i], self.which_set)
             #word vocab and answer vocab differ
             answer_words = [min(self.max_vocab, self.kb.answer_id_to_word_id(a))

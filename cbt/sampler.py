@@ -20,8 +20,6 @@ class BatchSampler:
     def reset(self):
         self.todo = list(range(self.num_contexts))
         self._rng.shuffle(self.todo)
-        if self.num_contexts % self.batch_size != 0:
-            self.todo = self.todo[:-(self.num_contexts % self.batch_size)]
         self.count = 0
 
     def end_of_epoch(self):
@@ -47,14 +45,15 @@ class BatchSampler:
 
         batch_queries = []
         splitter = self.kb.id(answer_sep)
-        for i in range(min(self.batch_size, len(self.todo))):
+        batch_size = min(self.batch_size, len(self.todo))
+        for i in range(batch_size):
             ctxt = self.kb.context(self.todo[i], self.which_set)
             k = ctxt.index(splitter)
             if self.max_vocab > 0:
                 ctxt = [min(self.max_vocab, i) for i in ctxt]
             # < k: supporting evidence; >k: query
             # we switch start and end here, because placeholder is anonymized -> consider only outer context
-            ends, starts = self.kb.spans(self.todo[i], self.which_set)
+            starts, ends = self.kb.spans(self.todo[i], self.which_set)
             answers = self.kb.answers(self.todo[i], self.which_set)
             # in cbt all words are potential answers so use word vocab instead of answer vocab
             answers = [min(self.max_vocab, self.kb.answer_id_to_word_id(a))
@@ -66,12 +65,12 @@ class BatchSampler:
             supp_queries = []
             for start, c in enumerate(ctxt):
                 if c in cand_set:
-                    supp_queries.append(ContextQuery(None, start+1, start, c, c, None))
+                    supp_queries.append(ContextQuery(None, start, start+1, c, c, None))
             supp_queries = ContextQueries(None, supp_queries)
             neg_cands = [c for c in candidates if c != answers[-1]]
             query = ContextQuery(ctxt, starts[-1], ends[-1], answers[-1], answers[-1], neg_cands, supporting_evidence=[supp_queries])
             batch_queries.append(ContextQueries(ctxt, [query]))
-        self.todo = self.todo[self.batch_size:]
+        self.todo = self.todo[batch_size:]
         self.count += 1
         return batch_queries
 
