@@ -158,11 +158,11 @@ class QAModel:
         sess.run(self.keep_prob.assign(1.0))
 
     def _supporting_evidence(self, query):
+        query, supp_queries = tf.dynamic_partition(query, self._query_partition, 2)
         if self._max_queries == 0:
             return query
         else:
             with vs.variable_scope("supporting"):
-                query, supp_queries = tf.dynamic_partition(query, self._query_partition, 2)
                 num_queries = tf.shape(query)[0]
                 
                 with tf.device("/cpu:0"):
