@@ -54,15 +54,15 @@ if __name__ == '__main__':
     tf.app.flags.DEFINE_string("devices", "/cpu:0", "Use this device.")
     tf.app.flags.DEFINE_string("model_file", None, "Model to load.")
     tf.app.flags.DEFINE_string("composition", None, "'LSTM', 'GRU', 'RNN', 'BoW', 'BiLSTM', 'BiGRU', 'BiRNN', 'Conv'")
+    tf.app.flags.DEFINE_string("tag", "NE", "Tag of training set. Possible values are 'CN', 'NE', 'P', 'V'.")
 
     FLAGS = tf.app.flags.FLAGS
 
     print("Loading KB ...")
     kb = KB()
     kb.load(FLAGS.kb)
-    valid_sampler = BatchSampler(kb, FLAGS.batch_size, "valid", max_vocab=FLAGS.max_vocab)
-    test_sampler = BatchSampler(kb, FLAGS.batch_size, "test", max_vocab=FLAGS.max_vocab)
-
+    valid_sampler = BatchSampler(kb, FLAGS.batch_size, FLAGS.tag+"_valid_2000ex", max_vocab=FLAGS.max_vocab)
+    test_sampler = BatchSampler(kb, FLAGS.batch_size, FLAGS.tag+"_test_2500ex", max_vocab=FLAGS.max_vocab)
     config = tf.ConfigProto(allow_soft_placement=True)
     config.gpu_options.allow_growth = True
     with tf.Session(config=config) as sess:
@@ -70,9 +70,8 @@ if __name__ == '__main__':
         max_length = kb.max_context_length
         devices = FLAGS.devices.split(",")
         vocab_size = min(FLAGS.max_vocab+1, len(kb.vocab)) if FLAGS.max_vocab > 0 else len(kb.vocab)
-        m = QAModel(FLAGS.size, FLAGS.batch_size, vocab_size, len(kb.answer_vocab), max_length,
-                    learning_rate=FLAGS.learning_rate, max_queries=FLAGS.max_queries, devices=devices,
-                    keep_prob=1.0-FLAGS.dropout)
+        m = QAModel(FLAGS.size, FLAGS.batch_size, vocab_size, vocab_size, max_length,
+                    max_queries=FLAGS.max_queries, devices=devices)
         print("Created model: " + m.name())
         print("Loading from " + FLAGS.model_file)
         m.saver.restore(sess, FLAGS.model_file)

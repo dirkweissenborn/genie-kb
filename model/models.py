@@ -45,8 +45,8 @@ class QAModel:
                 self.query = self._comp_f()
                 self.query = self._supporting_evidence(self.query)
                 self._score = tf_util.batch_dot(lookup_individual, self.query)
-                self._scores_with_negs = tf.squeeze(tf.batch_matmul(lookup, tf.expand_dims(self.query, [2])), [2])
-                self._scores_with_negs += self._candidate_mask  # number of negative candidates can vary for each example
+                self._scores_with_negs = tf.squeeze(tf.batch_matmul(lookup, tf.expand_dims(self.query, [2])), [2]) + \
+                                         self._candidate_mask  # number of negative candidates can vary for each example
 
                 if is_train:
                     self.learning_rate = tf.Variable(float(learning_rate), trainable=False, name="lr")
@@ -197,7 +197,9 @@ class QAModel:
                             
                         scores = tf_util.batch_dot(aligned_queries, aligned_support)
                         self.evidence_weights.append(scores)
-                        e_scores = tf.exp(scores - tf.reduce_max(scores, [0], keep_dims=True))
+                        score_max = tf.gather(tf.segment_max(scores, query_ids), query_ids)
+                        
+                        e_scores = tf.exp(scores - score_max)
                         norm = tf.unsorted_segment_sum(e_scores, query_ids, num_queries) + 0.00001 # for zero norms
                         norm = tf.reshape(norm, [-1, 1])
                         # this is basically the dot product between query and weighted supp_queries
@@ -431,12 +433,13 @@ class QAModel:
 
     def score_examples(self, sess, queries):
         i = j = 0
-        num_queries = functools.reduce(lambda a,x: a+len(x.queries), queries, 0)
+        num_queries = 0
         max_neg_candidates = 0
         for context_queries in queries:
             for q in context_queries.queries:
                 max_neg_candidates = max(max_neg_candidates, len(q.neg_candidates))
-        result = np.zeros([num_queries, max_neg_candidates+1])
+                num_queries += 1
+        result = np.zeros([num_queries, max_neg_candidates+1]) - 1e-6
         while i < len(queries):
             batch_size = min(self._batch_size, len(queries)-i)
             self._start_adding_examples()

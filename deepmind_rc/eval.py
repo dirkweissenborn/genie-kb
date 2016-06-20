@@ -5,7 +5,6 @@ def rank_batch(sess, model, batch):
     scores = model.score_examples(sess, batch)
     ix = np.argsort(scores, 1)[:,::-1]
     rank = np.where(ix == 0)[1] + 1
-
     return rank
 
 
@@ -24,7 +23,6 @@ def eval_dataset(sess, model, sampler, verbose=False):
         if verbose:
             sys.stdout.write("\r%.1f%%, acc: %.3f, mrr: %.3f" % (sampler.get_epoch()*100.0, tp / total, rr / total))
             sys.stdout.flush()
-
 
     acc = tp / total
     mrr = rr / total
@@ -70,8 +68,7 @@ if __name__ == '__main__':
         devices = FLAGS.devices.split(",")
         vocab_size = min(FLAGS.max_vocab+1, len(kb.vocab)) if FLAGS.max_vocab > 0 else len(kb.vocab)
         m = QAModel(FLAGS.size, FLAGS.batch_size, vocab_size, len(kb.answer_vocab), max_length,
-                    learning_rate=FLAGS.learning_rate, max_queries=FLAGS.max_queries, devices=devices,
-                    keep_prob=1.0-FLAGS.dropout)
+                    max_queries=FLAGS.max_queries, devices=devices)
         print("Created model: " + m.name())
         print("Loading from " + FLAGS.model_file)
         m.saver.restore(sess, FLAGS.model_file)

@@ -150,7 +150,7 @@ with tf.Session(config=config) as sess:
             epoch += 1
             accuracy = validate()
             print("Epoch %d done!" % epoch)
-            if accuracy <= epoch_acc - 1e-3:
+            if accuracy <= epoch_acc + 1e-4:
                 print("Stop learning!")
                 break
             else:
