@@ -75,10 +75,26 @@ for (query_id, entity_name, doc_id, entity_begin, entity_end, entity_type) in ta
             if last_name_id:
                 # also query for last name
                 entity_query = x.Query(x.Query.OP_OR, [entity_query, x.Query("XM" + str(last_name_id))])
+        elif query_entity.type == "ORG" or query_entity.type == "GPE" and not query_entity_token.startswith("the"):
+            last_name_id = word_to_id.get("the " + query_entity_token)
+            if last_name_id:
+                # also query for last name
+                entity_query = x.Query(x.Query.OP_OR, [entity_query, x.Query("XM" + str(last_name_id))])
+        elif query_entity.type == "ORG" or query_entity.type == "GPE" and query_entity_token.startswith("the"):
+            last_name_id = word_to_id.get(query_entity_token[4:])
+            if last_name_id:
+                # also query for last name
+                entity_query = x.Query(x.Query.OP_OR, [entity_query, x.Query("XM" + str(last_name_id))])
+        if query_entity_token.endswith("'s"):
+            last_name_id = word_to_id.get(query_entity_token[:-2])
+            if last_name_id:
+                # also query for last name
+                entity_query = x.Query(x.Query.OP_OR, [entity_query, x.Query("XM" + str(last_name_id))])
+
         enquire.set_query(entity_query)
 
         matches = enquire.get_mset(0, 100000)
-        support_docs = [indexed_sentence_to_paragraph(pickle.loads(doc.get_data()), enquire, 2)
+        support_docs = [indexed_sentence_to_paragraph(pickle.loads(doc.get_data()), enquire, -1)
                         for doc in set(match.document for match in matches)]
 
         if not support_docs:

@@ -69,7 +69,7 @@ def indexed_sentence_to_paragraph(sentence, enquire, max_window=-1):
     enquire.set_query(q)
     matches = enquire.get_mset(0, 1000)
     sentences = [pickle.loads(match.document.get_data()) for match in matches]
-    sentences = [s for s in sentences if s.sentence_id.startswith(paragraph_id)]
+    #sentences = [s for s in sentences if s.sentence_id.startswith(paragraph_id)]
     sentences = sorted(sentences, key=lambda s: s.sentence_id)
     tokens = []
     entities = []
@@ -115,19 +115,16 @@ def load_geonames(fn):
 def relabel_entity_type(e, answer_types, cities, countries, state_or_province):
     if e.type == "LOC" or e.type == "GPE":
         relabeled = False
-        if e.type in answer_types:
+        # give preference to answer_typ, because same surface form can refer to many location types
+        if "CITY" in answer_types and e.surface_form.lower() in cities:
+            e.type = "CITY"
             relabeled = True
-        else:
-            # give preference to answer_typ, because same surface form can refer to many location types
-            if "CITY" in answer_types and e.surface_form.lower() in cities:
-                e.type = "CITY"
-                relabeled = True
-            elif "COUNTRY" in answer_types and e.surface_form.lower() in countries:
-                e.type = "COUNTRY"
-                relabeled = True
-            elif "STATEORPROVINCE" in answer_types and e.surface_form.lower() in state_or_province:
-                e.type = "STATEORPROVINCE"
-                relabeled = True
+        elif "COUNTRY" in answer_types and e.surface_form.lower() in countries:
+            e.type = "COUNTRY"
+            relabeled = True
+        elif "STATEORPROVINCE" in answer_types and e.surface_form.lower() in state_or_province:
+            e.type = "STATEORPROVINCE"
+            relabeled = True
         if not relabeled: # ordered by granularity
             if e.surface_form.lower() in countries:
                 e.type = "COUNTRY"
@@ -187,31 +184,31 @@ slot_answer_types = {
     "org:alternate_names": ["ORG"],
     "per:date_of_birth": ["DATE"],
     "org:political_religious_affiliation": ["ORG", "NORP"],
-    "per:age": ["CARDINAL"],
+    "per:age": ["CARDINAL", "DATE"],
     "org:top_members_employees": ["PERSON"],
-    "per:country_of_birth": ["COUNTRY"],
+    "per:country_of_birth": ["COUNTRY", "LOC", "GPE"],
     "org:number_of_employees_members": ["CARDINAL"],
-    "per:stateorprovince_of_birth": ["STATEORPROVINCE"],
-    "org:members": ["ORG","GPE"],
-    "per:city_of_birth": ["CITY"],
+    "per:stateorprovince_of_birth": ["STATEORPROVINCE", "LOC", "GPE"],
+    "org:members": ["ORG", "GPE"],
+    "per:city_of_birth": ["CITY", "LOC", "GPE"],
     "org:member_of": ["ORG"],
     "per:origin": ["NORP"],
     "per:date_of_death": ["DATE"],
     "org:subsidiaries": ["ORG"],
-    "org:parents": ["ORG"],
-    "per:country_of_death": ["COUNTRY"],
+    "org:parents": ["ORG", "GPE", "NORP"],
+    "per:country_of_death": ["COUNTRY", "LOC", "GPE"],
     "org:founded_by": ["PERSON", "ORG", "GPE"],
-    "per:stateorprovince_of_death": ["STATEORPROVINCE"],
+    "per:stateorprovince_of_death": ["STATEORPROVINCE", "LOC", "GPE"],
     "org:date_founded": ["DATE"],
-    "per:city_of_death": ["CITY"],
+    "per:city_of_death": ["CITY", "LOC", "GPE"],
     "org:date_dissolved": ["DATE"],
     "per:cause_of_death": ["DISEASE"],
-    "org:country_of_headquarters": ["COUNTRY"],
-    "org:stateorprovince_of_headquarters": ["STATEORPROVINCE"],
-    "org:city_of_headquarters": ["CITY"],
-    "per:countries_of_residence": ["COUNTRY"],
-    "per:statesorprovinces_of_residence": ["STATEORPROVINCE"],
-    "per:cities_of_residence": ["CITY"],
+    "org:country_of_headquarters": ["COUNTRY", "LOC", "GPE"],
+    "org:stateorprovince_of_headquarters": ["STATEORPROVINCE", "LOC", "GPE"],
+    "org:city_of_headquarters": ["CITY", "LOC", "GPE"],
+    "per:countries_of_residence": ["COUNTRY", "LOC", "GPE"],
+    "per:statesorprovinces_of_residence": ["STATEORPROVINCE", "LOC", "GPE"],
+    "per:cities_of_residence": ["CITY", "LOC", "GPE"],
     "org:shareholders": ["PERSON", "ORG", "GPE"],
     "per:schools_attended": ["ORG"],
     "org:website": ["URL"],
