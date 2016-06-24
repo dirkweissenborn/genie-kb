@@ -184,7 +184,8 @@ class QAModel:
                         aligned_answers_input = tf.gather(answer_words, self._support_ids)
 
                 self.evidence_weights = []
-                current_answers = [tf.zeros_like(query)]
+                current_answers = [query * tf.sigmoid(tf.get_variable("query_as_answer_weight", tuple(),
+                                                                      initializer=tf.constant_initializer(0.0)))]
                 current_query = query
 
                 aligned_support = tf.gather(supp_queries, self._support_ids)  # align supp_queries with queries
@@ -206,7 +207,7 @@ class QAModel:
                             
                         scores = tf_util.batch_dot(aligned_queries, aligned_support)
                         self.evidence_weights.append(scores)
-                        score_max = 0.0 #tf.gather(tf.segment_max(scores, query_ids), query_ids)
+                        score_max = tf.gather(tf.segment_max(scores, query_ids), query_ids)
 
                         e_scores = tf.exp(scores - score_max)
                         norm = tf.unsorted_segment_sum(e_scores, query_ids, num_queries) + 0.00001 # for zero norms
