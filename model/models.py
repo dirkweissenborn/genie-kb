@@ -184,7 +184,7 @@ class QAModel:
                         aligned_answers_input = tf.gather(answer_words, self._support_ids)
 
                 self.evidence_weights = []
-                current_answers = [query]
+                current_answers = [tf.zeros_like(query)]
                 current_query = query
 
                 aligned_support = tf.gather(supp_queries, self._support_ids)  # align supp_queries with queries
