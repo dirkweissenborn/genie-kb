@@ -35,18 +35,18 @@ class QAModel:
                 self._init_inputs()
                 self.keep_prob = tf.get_variable("keep_prob", [], initializer=tf.constant_initializer(keep_prob))
                 with tf.device("/cpu:0"):
-                    self.candidates = tf.get_variable("E_candidate", [answer_vocab_size, self._size], initializer=self._init)
-                    self.embeddings = tf.get_variable("E_words", [vocab_size, self._size], initializer=self._init)
+                    self.output_embedding = tf.get_variable("E_candidate", [answer_vocab_size, self._size], initializer=self._init)
+                    self.input_embedding = tf.get_variable("E_words", [vocab_size, self._size], initializer=self._init)
                     answer, _ = tf.dynamic_partition(self._answer_input, self._query_partition, 2)
-                    lookup_individual = tf.nn.embedding_lookup(self.candidates, answer)
+                    lookup_individual = tf.nn.embedding_lookup(self.output_embedding, answer)
                     cands,_ = tf.dynamic_partition(self._answer_candidates, self._query_partition, 2)
-                    lookup = tf.nn.embedding_lookup(self.candidates, cands)
+                    self.candidate_lookup = tf.nn.embedding_lookup(self.output_embedding, cands)
+
                 self.num_queries = tf.Variable(self._max_queries, trainable=False, name="num_queries")
                 self.query = self._comp_f()
-                self.query = self._supporting_evidence(self.query)
-                self._score = tf_util.batch_dot(lookup_individual, self.query)
-                self._scores_with_negs = tf.squeeze(tf.batch_matmul(lookup, tf.expand_dims(self.query, [2])), [2]) + \
-                                         self._candidate_mask  # number of negative candidates can vary for each example
+                answer = self._retrieve_answer(self.query)
+                self._score = tf_util.batch_dot(lookup_individual, answer)
+                self._scores_with_negs = self._score_candidates(answer)
 
                 if is_train:
                     self.learning_rate = tf.Variable(float(learning_rate), trainable=False, name="lr")
@@ -55,9 +55,12 @@ class QAModel:
                     self.opt = tf.train.AdamOptimizer(self.learning_rate)
 
                     current_batch_size = tf.gather(tf.shape(self._scores_with_negs), [0])
-                    labels = tf.constant([0], tf.int64)
-                    labels = tf.tile(labels, current_batch_size)
-                    loss = math_ops.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(self._scores_with_negs, labels))
+                    #labels = tf.constant([0], tf.int64)
+                    #labels = tf.tile(tf.constant([0], tf.int64), current_batch_size)
+                    loss = math_ops.reduce_sum(
+                        tf.nn.sparse_softmax_cross_entropy_with_logits(self._scores_with_negs,
+                                                                       tf.tile(tf.constant([0], tf.int64),
+                                                                               current_batch_size)))
 
                     train_params = tf.trainable_variables()
                     self.training_weight = tf.Variable(1.0, trainable=False, name="training_weight")
@@ -72,6 +75,10 @@ class QAModel:
                     else:
                         self._update = tf.assign_add(self.global_step, 1)
         self.saver = tf.train.Saver(tf.all_variables(), max_to_keep=1)
+
+    def _score_candidates(self, answer):
+        return tf.squeeze(tf.batch_matmul(self.candidate_lookup, tf.expand_dims(answer, [2])), [2]) + \
+                                         self._candidate_mask  # number of negative candidates can vary for each example
 
     def _composition_function(self, inputs, length, init_state=None):
         if self._composition == "GRU":
@@ -109,7 +116,7 @@ class QAModel:
             max_length = tf.cast(tf.reduce_max(self._length), tf.int32)
             context_t = tf.transpose(self._context)
             context_t = tf.slice(context_t, [0, 0], tf.pack([max_length, -1]))
-            embedded = tf.nn.embedding_lookup(self.embeddings, context_t)
+            embedded = tf.nn.embedding_lookup(self.input_embedding, context_t)
             embedded = tf.nn.dropout(embedded, self.keep_prob)
             batch_size = tf.shape(self._context)[0]
             batch_size_32 = tf.reshape(batch_size, [1])
@@ -157,7 +164,7 @@ class QAModel:
     def set_eval(self, sess):
         sess.run(self.keep_prob.assign(1.0))
 
-    def _supporting_evidence(self, query):
+    def _retrieve_answer(self, query):
         query, supp_queries = tf.dynamic_partition(query, self._query_partition, 2)
         if self._max_queries == 0:
             return query
@@ -166,14 +173,14 @@ class QAModel:
                 num_queries = tf.shape(query)[0]
                 
                 with tf.device("/cpu:0"):
-                    _, supp_answer_ids = tf.dynamic_partition(self._answer_input, self._query_partition, 2)
-                    _, supp_answer_word_ids = tf.dynamic_partition(self._answer_word_input, self._query_partition, 2)
-                    supp_answers = tf.nn.embedding_lookup(self.candidates, supp_answer_ids)
+                    _, supp_answer_output_ids = tf.dynamic_partition(self._answer_input, self._query_partition, 2)
+                    _, supp_answer_input_ids = tf.dynamic_partition(self._answer_word_input, self._query_partition, 2)
+                    supp_answers = tf.nn.embedding_lookup(self.output_embedding, supp_answer_output_ids)
                     aligned_supp_answers = tf.gather(supp_answers, self._support_ids)  # and with respective answers
 
                     if self._max_queries > 1:
                         # used in multihop
-                        answer_words = tf.nn.embedding_lookup(self.embeddings, supp_answer_word_ids)
+                        answer_words = tf.nn.embedding_lookup(self.input_embedding, supp_answer_input_ids)
                         aligned_answers_input = tf.gather(answer_words, self._support_ids)
 
                 self.evidence_weights = []
@@ -185,7 +192,9 @@ class QAModel:
                 aligned_support = tf.concat(0, [aligned_support, collab_support])
 
                 query_ids = tf.concat(0, [self._query_ids, self._collab_query_ids])
+                self.answer_weights = []
 
+                current_answer_weight = tf.ones(tf.pack([num_queries, 1]))
                 with vs.variable_scope("evidence"):
                     for i in range(self._max_queries):
                         if i > 0:
@@ -197,27 +206,44 @@ class QAModel:
                             
                         scores = tf_util.batch_dot(aligned_queries, aligned_support)
                         self.evidence_weights.append(scores)
-                        score_max = tf.gather(tf.segment_max(scores, query_ids), query_ids)
-                        
+                        score_max = 0.0 #tf.gather(tf.segment_max(scores, query_ids), query_ids)
+
                         e_scores = tf.exp(scores - score_max)
                         norm = tf.unsorted_segment_sum(e_scores, query_ids, num_queries) + 0.00001 # for zero norms
                         norm = tf.reshape(norm, [-1, 1])
                         # this is basically the dot product between query and weighted supp_queries
-                        weighted_score_sum = tf.unsorted_segment_sum(tf.reshape(e_scores * scores, [-1, 1]),
-                                                                     query_ids, num_queries) / norm
+                        #weighted_score_sum = tf.unsorted_segment_sum(tf.reshape(e_scores * scores, [-1, 1]),
+                        #                                             query_ids, num_queries) / norm
                         e_scores = tf.reshape(e_scores, [-1, 1])
 
                         aligned_supp_answers_with_collab = tf.concat(0, [aligned_supp_answers, collab_queries])
-                        weighted_answers = tf.unsorted_segment_sum(e_scores * aligned_supp_answers_with_collab,
+                        weighted_supp_answers = tf.unsorted_segment_sum(e_scores * aligned_supp_answers_with_collab,
                                                                    query_ids, num_queries) / norm
 
-                        weighted_answers = tf.tanh(weighted_answers)
-                        answer_weight = tf.contrib.layers.fully_connected(weighted_score_sum, 1,
+                        answer_to_query = tf.contrib.layers.fully_connected(weighted_supp_answers, self._size,
+                                                                            activation_fn=None,
+                                                                            weights_initializer=None,
+                                                                            biases_initializer=None, scope="answer_to_query")
+
+                        weighted_supp_queries = tf.unsorted_segment_sum(e_scores * aligned_support, query_ids, num_queries) / norm
+
+
+                        answer_scores = tf.reduce_max(self._score_candidates(current_answers[i]), [1], keep_dims=True)
+                        answer_weight = tf.contrib.layers.fully_connected(tf.concat(1, [answer_to_query * query,
+                                                                                        weighted_supp_queries * current_query,
+                                                                                        answer_scores]),
+                                                                          1,
                                                                           activation_fn=tf.nn.sigmoid,
                                                                           weights_initializer=tf.constant_initializer(0.0),
-                                                                          biases_initializer=tf.constant_initializer(0.0), scope="answer_weight")
+                                                                          biases_initializer=tf.constant_initializer(0.0),
+                                                                          scope="answer_weight")
 
-                        new_answer = weighted_answers * answer_weight + (1.0-answer_weight) * current_answers[i]
+                        current_answer_weight = tf.cond(tf.greater(self.num_queries, i + 1),
+                                                lambda: answer_weight * current_answer_weight,
+                                                lambda: current_answer_weight)
+
+                        self.answer_weights.append(answer_weight)
+                        new_answer = weighted_supp_answers * current_answer_weight + current_answers[i]
                         current_answers.append(tf.cond(tf.greater(self.num_queries, i),
                                                        lambda: new_answer,
                                                        lambda: current_answers[i]))
@@ -228,12 +254,11 @@ class QAModel:
                             weighted_answer_words = tf.unsorted_segment_sum(e_scores * aligned_answers_input_with_collab,
                                                                             query_ids, num_queries) / norm
 
-                            weighted_queries = tf.unsorted_segment_sum(e_scores * aligned_support, query_ids, num_queries) / norm
-                            c = tf.contrib.layers.fully_connected(tf.concat(1, [current_query, weighted_answer_words]),
+                            c = tf.contrib.layers.fully_connected(tf.concat(1, [current_query, weighted_supp_queries, weighted_answer_words]),
                                                                   self._size, activation_fn=tf.tanh, scope="update_candidate",
                                                                   weights_initializer=None, biases_initializer=None)
 
-                            gate = tf.contrib.layers.fully_connected(tf.concat(1, [current_query, weighted_queries]),
+                            gate = tf.contrib.layers.fully_connected(tf.concat(1, [current_query, weighted_supp_queries]),
                                                                      self._size, activation_fn=tf.sigmoid,
                                                                      weights_initializer=None, scope="update_gate",
                                                                      biases_initializer=tf.constant_initializer(1))
@@ -330,9 +355,9 @@ class QAModel:
             self._span_ctxt.append(batch_idx)
             self._answer_in.append(q.answer)
             self._answer_word_in.append(q.answer_word)
-            cands = [q.answer]
-            if q.neg_candidates is not None and q.neg_candidates is not None:
-                cands.extend(q.neg_candidates)
+            cands = [q.answer] if q.answer is not None else []
+            if q.candidates is not None and q.candidates is not None:
+                cands.extend(c for c in q.candidates if c != q.answer)
             self._answer_cands.append(cands)
             self._query_part.append(0 if is_query else 1)
 
@@ -437,7 +462,7 @@ class QAModel:
         max_neg_candidates = 0
         for context_queries in queries:
             for q in context_queries.queries:
-                max_neg_candidates = max(max_neg_candidates, len(q.neg_candidates))
+                max_neg_candidates = max(max_neg_candidates, len(q.candidates))
                 num_queries += 1
         result = np.zeros([num_queries, max_neg_candidates+1]) - 1e-6
         while i < len(queries):
@@ -503,7 +528,7 @@ def test_model():
                                             ContextQuery(contexts[2], 2,3,1,1,[0,1])])]
 
     queries = [ContextQueries(contexts[0], [ContextQuery(contexts[0], 0,1,0,0,[2,1]),
-                                            ContextQuery(contexts[0], 2,3,2,2,[0,1])], collaborative_support=True),
+                                            ContextQuery(contexts[0], 2,3,2,2,[0,1])]),
                ContextQueries(contexts[1], [ContextQuery(contexts[1], 1,2,2,2,[0,1], queries)]),
                ContextQueries(contexts[2], [ContextQuery(contexts[2], 1,2,1,1,[0,2], queries),
                                             ContextQuery(contexts[2], 2,3,2,2,[0,1])], queries)]

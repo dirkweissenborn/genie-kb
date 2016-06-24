@@ -83,13 +83,13 @@ with tf.Session(config=config) as sess:
         if FLAGS.embeddings is not None:
             print("Init embeddings with %s..." % FLAGS.embeddings)
             e = embeddings.load_embedding(FLAGS.embeddings)
-            em = sess.run(m.embeddings)
+            em = sess.run(m.input_embedding)
             for j in range(vocab_size):
                 w = kb.vocab[j]
                 v = e.get(w)
                 if v is not None:
                     em[j, :v.shape[0]] = v
-            sess.run(m.embeddings.assign(em))
+            sess.run(m.input_embedding.assign(em))
 
     print("Consecutive support lookup: %d" % FLAGS.num_queries)
     sess.run(m.num_queries.assign(FLAGS.num_queries))
