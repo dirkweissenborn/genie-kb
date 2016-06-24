@@ -184,8 +184,7 @@ class QAModel:
                         aligned_answers_input = tf.gather(answer_words, self._support_ids)
 
                 self.evidence_weights = []
-                current_answers = [query * tf.sigmoid(tf.get_variable("query_as_answer_weight", tuple(),
-                                                                      initializer=tf.constant_initializer(0.0)))]
+                current_answers = [tf.zeros_like(query)]
                 current_query = query
 
                 aligned_support = tf.gather(supp_queries, self._support_ids)  # align supp_queries with queries
@@ -239,15 +238,17 @@ class QAModel:
                                                                           biases_initializer=tf.constant_initializer(0.0),
                                                                           scope="answer_weight")
 
-                        current_answer_weight = tf.cond(tf.greater(self.num_queries, i + 1),
-                                                lambda: answer_weight * current_answer_weight,
-                                                lambda: current_answer_weight)
+                        this_answer_weight = answer_weight * current_answer_weight
+                        new_answer = this_answer_weight * weighted_supp_answers + current_answers[i]
 
-                        self.answer_weights.append(answer_weight)
-                        new_answer = weighted_supp_answers * current_answer_weight + current_answers[i]
                         current_answers.append(tf.cond(tf.greater(self.num_queries, i),
                                                        lambda: new_answer,
                                                        lambda: current_answers[i]))
+
+                        self.answer_weights.append(this_answer_weight)
+                        current_answer_weight = tf.cond(tf.greater(self.num_queries, i),
+                                                        lambda: current_answer_weight * (1.0-answer_weight),
+                                                        lambda: current_answer_weight)
 
                         if i < self._max_queries - 1:
                             # prepare subsequent query
@@ -264,7 +265,7 @@ class QAModel:
                                                                      weights_initializer=None, scope="update_gate",
                                                                      biases_initializer=tf.constant_initializer(1))
                             current_query = gate * current_query + (1-gate) * c
-
+                current_answers.append(current_answer_weight * query + current_answers[-1])
             return current_answers[-1]
 
     def _comp_f_fw(self, input, length):
