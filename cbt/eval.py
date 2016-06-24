@@ -47,7 +47,6 @@ if __name__ == '__main__':
 
     # model
     tf.app.flags.DEFINE_integer("size", 256, "hidden size of model")
-    tf.app.flags.DEFINE_integer("max_queries", 2, "max queries to supporting evidence")
     tf.app.flags.DEFINE_integer("num_queries", 1, "num queries to supporting evidence")
     tf.app.flags.DEFINE_integer("max_vocab", -1, "maximum vocabulary size")
     tf.app.flags.DEFINE_integer("batch_size", 25, "Number of examples in each batch for training.")
@@ -71,7 +70,7 @@ if __name__ == '__main__':
         devices = FLAGS.devices.split(",")
         vocab_size = min(FLAGS.max_vocab+1, len(kb.vocab)) if FLAGS.max_vocab > 0 else len(kb.vocab)
         m = QAModel(FLAGS.size, FLAGS.batch_size, vocab_size, vocab_size, max_length,
-                    max_queries=FLAGS.max_queries, devices=devices)
+                    max_queries=FLAGS.num_queries, devices=devices)
         print("Created model: " + m.name())
         print("Loading from " + FLAGS.model_file)
         m.saver.restore(sess, FLAGS.model_file)

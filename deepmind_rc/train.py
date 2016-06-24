@@ -15,7 +15,6 @@ tf.app.flags.DEFINE_string('kb', None, 'Path to prepared RC KB.')
 
 # model
 tf.app.flags.DEFINE_integer("size", 256, "hidden size of model")
-tf.app.flags.DEFINE_integer("max_queries", 2, "max queries to supporting evidence")
 tf.app.flags.DEFINE_integer("num_queries", 1, "num queries to supporting evidence")
 tf.app.flags.DEFINE_integer("max_vocab", -1, "maximum vocabulary size")
 tf.app.flags.DEFINE_float("dropout", 0.0, "Dropout.")
@@ -58,7 +57,7 @@ with tf.Session(config=config) as sess:
     devices = FLAGS.devices.split(",")
     vocab_size = min(FLAGS.max_vocab+1, len(kb.vocab)) if FLAGS.max_vocab > 0 else len(kb.vocab)
     m = QAModel(FLAGS.size, FLAGS.batch_size, vocab_size, len(kb.answer_vocab), max_length,
-                learning_rate=FLAGS.learning_rate, max_queries=FLAGS.max_queries, devices=devices,
+                learning_rate=FLAGS.learning_rate, max_queries=FLAGS.num_queries, devices=devices,
                 keep_prob=1.0-FLAGS.dropout)
 
     print("Created model: " + m.name())

@@ -24,7 +24,11 @@ def add2kb(fn, typ):
                     start = content.index(placeholder)
                     answer = content[-2]
                     answer_cands = content[-1].split("|")
-                    content = content[:-2] + [answer_sep] + answer_cands
+                    for i in range(len(content)):
+                        if content[i] in answer_cands:
+                            k = answer_cands.index(content[i])
+                            content[i] = "@candidate%d" % k
+                    content = content[:-2] + [answer_sep] + ["@candidate%d" % k for k in range(len(answer_cands))]
                     kb.add(content, [(start, start+1)], [answer], typ)
                     content = []
             else:

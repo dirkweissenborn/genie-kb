@@ -87,7 +87,7 @@ with tf.Session(config=config) as sess:
 
     searcher = None
     if any(ds.startswith("TAC_EL/") for ds in train_sets):
-        searcher = ANNSearcher(sess.run(m.candidates))
+        searcher = ANNSearcher(sess.run(m.output_embedding))
 
     sampler = BatchSampler(fact_kb, FLAGS.batch_size, train_sets)
     valid_samplers = {ds:BatchSampler(fact_kb, FLAGS.batch_size, [ds]) for ds in valid_sets}
@@ -115,7 +115,7 @@ with tf.Session(config=config) as sess:
             print("####################################")
         if any(ds.startswith("TAC_EL/") for ds in train_sets):
             print("Updating ANN candidate search...")
-            searcher.update(sess.run(m.candidates))
+            searcher.update(sess.run(m.output_embedding))
             print("Done.")
 
         if not best_path or any(results[ds][-1] > max(results[ds][:-1]) for ds in valid_sets):
