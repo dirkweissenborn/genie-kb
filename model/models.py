@@ -23,7 +23,6 @@ class QAModel:
         #self._embedding_size = size if embedding_size is None else embedding_size
         self._batch_size = batch_size
         self._is_train = is_train
-        self._init = model.default_init()
         self._composition = composition
         self._max_queries = max_queries
         self._device0 = devices[0] if devices is not None else "/cpu:0"
@@ -35,8 +34,8 @@ class QAModel:
                 self._init_inputs()
                 self.keep_prob = tf.get_variable("keep_prob", [], initializer=tf.constant_initializer(keep_prob))
                 with tf.device("/cpu:0"):
-                    self.output_embedding = tf.get_variable("E_candidate", [answer_vocab_size, self._size], initializer=self._init)
-                    self.input_embedding = tf.get_variable("E_words", [vocab_size, self._size], initializer=self._init)
+                    self.output_embedding = tf.get_variable("E_candidate", [answer_vocab_size, self._size], initializer=model.default_init())
+                    self.input_embedding = tf.get_variable("E_words", [vocab_size, self._size], initializer=model.default_init())
                     answer, _ = tf.dynamic_partition(self._answer_input, self._query_partition, 2)
                     lookup_individual = tf.nn.embedding_lookup(self.output_embedding, answer)
                     cands,_ = tf.dynamic_partition(self._answer_candidates, self._query_partition, 2)
@@ -55,8 +54,7 @@ class QAModel:
                     self.opt = tf.train.AdamOptimizer(self.learning_rate)
 
                     current_batch_size = tf.gather(tf.shape(self._scores_with_negs), [0])
-                    #labels = tf.constant([0], tf.int64)
-                    #labels = tf.tile(tf.constant([0], tf.int64), current_batch_size)
+
                     loss = math_ops.reduce_sum(
                         tf.nn.sparse_softmax_cross_entropy_with_logits(self._scores_with_negs,
                                                                        tf.tile(tf.constant([0], tf.int64),
@@ -226,13 +224,7 @@ class QAModel:
                         weighted_supp_answers = tf.unsorted_segment_sum(e_scores * aligned_supp_answers_with_collab,
                                                                    query_ids, num_queries) / norm
 
-                        #answer_to_query = tf.contrib.layers.fully_connected(weighted_supp_answers, self._size,
-                         #                                                   activation_fn=None,
-                          #                                                  weights_initializer=None,
-                           #                                                 biases_initializer=None, scope="answer_to_query")
-
                         weighted_supp_queries = tf.unsorted_segment_sum(e_scores * aligned_support, query_ids, num_queries) / norm
-
 
                         answer_scores = tf.reduce_max(self._score_candidates(current_answers[i]), [1], keep_dims=True)
                         answer_weight = tf.contrib.layers.fully_connected(tf.concat(1, [query_as_answer * weighted_supp_answers,
@@ -252,9 +244,6 @@ class QAModel:
                                                        lambda: current_answers[i]))
 
                         self.answer_weights.append(this_answer_weight)
-                        #current_answer_weight = tf.cond(tf.greater(self.num_queries, i),
-                        #                                lambda: current_answer_weight * (1.0-answer_weight),
-                        #                                lambda: current_answer_weight)
 
                         if i < self._max_queries - 1:
                             # prepare subsequent query
@@ -271,7 +260,7 @@ class QAModel:
                                                                      weights_initializer=None, scope="update_gate",
                                                                      biases_initializer=tf.constant_initializer(1))
                             current_query = gate * current_query + (1-gate) * c
-                #current_answers.append(current_answer_weight * query + current_answers[-1])
+
             return current_answers[-1]
 
     def _comp_f_fw(self, input, length):
