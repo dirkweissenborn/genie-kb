@@ -4,7 +4,7 @@ import math
 
 class BatchSampler:
 
-    def __init__(self, kb, batch_size, which_set="train", max_contexts=-1, max_vocab=-1):
+    def __init__(self, kb, batch_size, which_set="train", max_contexts=-1, max_vocab=-1, seed=73642):
         self.kb = kb
         self.batch_size = batch_size
         self.which_set = which_set
@@ -13,7 +13,7 @@ class BatchSampler:
         if max_contexts > 0:
             self.num_contexts = min(max_contexts, self.num_contexts)
         self.epoch_size = math.ceil(self.num_contexts / self.batch_size)
-        self._rng = random.Random(73642)
+        self._rng = random.Random(seed)
         self.reset()
 
     def reset(self):

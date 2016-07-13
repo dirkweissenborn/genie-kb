@@ -33,7 +33,7 @@ class KB:
         self.__max_span_length = 0
         # is ordered
         self.__ordered = False
-        #lock for multi-threaded add
+        # lock for multi-threaded add
         self.__lock = Lock()
 
     def add(self, context, spans, answers=None, dataset="train"):

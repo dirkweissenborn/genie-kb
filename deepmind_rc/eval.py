@@ -73,7 +73,7 @@ if __name__ == '__main__':
         m.saver.restore(sess, FLAGS.model_file)
 
         print("Consecutive support lookup: %d" % FLAGS.num_queries)
-        sess.run(m.num_queries.assign(FLAGS.num_queries))
+        sess.run(m._num_queries.assign(FLAGS.num_queries))
         num_params = functools.reduce(lambda acc, x: acc + x.size, sess.run(tf.trainable_variables()), 0)
         print("Num params: %d" % num_params)
 

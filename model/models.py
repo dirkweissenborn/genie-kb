@@ -41,17 +41,17 @@ class QAModel:
                     cands,_ = tf.dynamic_partition(self._answer_candidates, self._query_partition, 2)
                     self.candidate_lookup = tf.nn.embedding_lookup(self.output_embedding, cands)
 
-                self.num_queries = tf.Variable(self._max_queries, trainable=False, name="num_queries")
+                self._num_queries = tf.Variable(self._max_queries, trainable=False, name="num_queries")
                 self.query = self._comp_f()
                 answer = self._retrieve_answer(self.query)
                 self._score = tf_util.batch_dot(lookup_individual, answer)
                 self._scores_with_negs = self._score_candidates(answer)
 
                 if is_train:
-                    self.learning_rate = tf.Variable(float(learning_rate), trainable=False, name="lr")
+                    self._learning_rate = tf.Variable(float(learning_rate), trainable=False, name="lr")
                     self.global_step = tf.Variable(0, trainable=False, name="step")
 
-                    self.opt = tf.train.AdamOptimizer(self.learning_rate)
+                    self.opt = tf.train.AdamOptimizer(self._learning_rate)
 
                     current_batch_size = tf.gather(tf.shape(self._scores_with_negs), [0])
 
@@ -162,6 +162,15 @@ class QAModel:
     def set_eval(self, sess):
         sess.run(self.keep_prob.assign(1.0))
 
+    def set_num_queries(self, sess, k):
+        sess.run(self._num_queries.assign(k))
+
+    def set_learning_rate(self, sess, lr):
+        sess.run(self._learning_rate.assign(lr))
+
+    def learning_rate(self, sess):
+        return sess.run(self._learning_rate)
+
     def _retrieve_answer(self, query):
         query, supp_queries = tf.dynamic_partition(query, self._query_partition, 2)
         if self._max_queries == 0:
@@ -239,7 +248,7 @@ class QAModel:
                         this_answer_weight = answer_weight * current_answer_weight
                         new_answer = this_answer_weight * weighted_supp_answers + current_answers[i]
 
-                        current_answers.append(tf.cond(tf.greater(self.num_queries, i),
+                        current_answers.append(tf.cond(tf.greater(self._num_queries, i),
                                                        lambda: new_answer,
                                                        lambda: current_answers[i]))
 
@@ -511,6 +520,77 @@ class QAModel:
         return sess.run(to_run, feed_dict=self._get_feed_dict())
 
 
+class EnsembleQAModel:
+
+    def __init__(self, num_models, size, batch_size, vocab_size, answer_vocab_size, max_length, is_train=True, learning_rate=1e-2,
+                 composition="GRU", max_queries=0, devices=None, keep_prob=1.0):
+        self.models = []
+        self._is_train = is_train
+        self._next_to_update = 0
+        for i in range(num_models):
+            with tf.variable_scope("model_%d" % i, initializer=tf.contrib.layers.xavier_initializer()):
+                dvcs = devices[i % len(devices):(i % len(devices) + max(1, len(devices) // num_models))]
+                self.models.append(QAModel(size, batch_size, vocab_size, answer_vocab_size, max_length, is_train,
+                                           learning_rate, composition, max_queries, dvcs, keep_prob))
+
+        self.global_step = self.models[0].global_step + 1
+
+        self.saver = tf.train.Saver(tf.all_variables(), max_to_keep=1)
+
+    def name(self):
+        return self.__class__.__name__
+
+    def set_train(self, sess):
+        for m in self.models:
+            m.set_train(sess)
+
+    def set_eval(self, sess):
+        for m in self.models:
+            m.set_eval(sess)
+
+    def set_num_queries(self, sess, k):
+        for m in self.models:
+            m.set_num_queries(sess, k)
+
+    def set_learning_rate(self, sess, lr):
+        for m in self.models:
+            m.set_learning_rate(sess, lr)
+
+    def learning_rate(self, sess):
+        return self.models[0].learning_rate(sess)
+
+    def score_examples(self, sess, queries):
+        num_queries = 0
+        max_neg_candidates = 0
+        for context_queries in queries:
+            for q in context_queries.queries:
+                max_neg_candidates = max(max_neg_candidates, len(q.candidates))
+                num_queries += 1
+        result = np.zeros([num_queries, max_neg_candidates+1]) - 1e-6
+        for m in self.models:
+            result += m.score_examples(sess, queries)
+
+        return result
+
+    def step(self, sess, queries, mode="update"):
+        '''
+        :param sess:
+        :param queries: batch of ContextQueries
+        :param mode:
+        :return:
+        '''
+        assert self._is_train, "model has to be created in training mode!"
+        l = 0.0
+        if mode == "loss":
+            for m in self.models:
+                l += m.run(sess, m._loss, queries)
+            return l
+        else:
+            m = self.models[self._next_to_update]
+            self._next_to_update = (self._next_to_update + 1) % len(self.models)
+            return m.step(sess, queries, "update")
+
+
 def test_model():
 
     model = QAModel(10, 4, 5, 5, 5, max_queries=2)
@@ -532,7 +612,7 @@ def test_model():
 
     with tf.Session() as sess:
         sess.run(tf.initialize_all_variables())
-        sess.run(model.num_queries.assign(1))
+        sess.run(model._num_queries.assign(1))
         print("Test update ...")
         for i in range(10):
             print("Loss: %.3f" %

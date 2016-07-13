@@ -3,7 +3,7 @@ import time
 from kb import KB
 from deepmind_rc.sampler import *
 from deepmind_rc import eval
-from model.models import QAModel
+from model.models import *
 import tensorflow as tf
 import sys
 import functools
@@ -23,6 +23,7 @@ tf.app.flags.DEFINE_float("learning_rate_decay", 0.5, "Learning rate decay when 
 tf.app.flags.DEFINE_integer("batch_size", 25, "Number of examples in each batch for training.")
 tf.app.flags.DEFINE_string("devices", "/cpu:0", "Use this device.")
 tf.app.flags.DEFINE_string("composition", None, "'LSTM', 'GRU', 'RNN', 'BoW', 'BiLSTM', 'BiGRU', 'BiRNN', 'Conv'")
+tf.app.flags.DEFINE_float("num_models", 1, "Only train single model (1, default) or ensemble with >1 models.")
 
 #training
 tf.app.flags.DEFINE_integer("max_iterations", -1, "Maximum number of batches during training. -1 means until convergence")
@@ -43,7 +44,7 @@ print("Loading KB ...")
 kb = KB()
 kb.load(FLAGS.kb)
 
-sampler = BatchSampler(kb, FLAGS.batch_size, "train", max_vocab=FLAGS.max_vocab)
+sampler = BatchSampler(kb, FLAGS.batch_size, "train", max_vocab=FLAGS.max_vocab, seed=FLAGS.random_seed+72408)
 
 train_dir = os.path.join(FLAGS.save_dir)
 valid_sampler = BatchSampler(kb, FLAGS.batch_size, "valid", FLAGS.subsample_validation, max_vocab=FLAGS.max_vocab)
@@ -56,11 +57,16 @@ with tf.Session(config=config) as sess:
     max_length = kb.max_context_length
     devices = FLAGS.devices.split(",")
     vocab_size = min(FLAGS.max_vocab+1, len(kb.vocab)) if FLAGS.max_vocab > 0 else len(kb.vocab)
-    m = QAModel(FLAGS.size, FLAGS.batch_size, vocab_size, len(kb.answer_vocab), max_length,
-                learning_rate=FLAGS.learning_rate, max_queries=FLAGS.num_queries, devices=devices,
-                keep_prob=1.0-FLAGS.dropout)
+    if FLAGS.num_models > 1:
+        qann = EnsembleQAModel(FLAGS.num_models, FLAGS.size, FLAGS.batch_size, vocab_size, vocab_size, max_length,
+                               learning_rate=FLAGS.learning_rate, max_queries=FLAGS.num_queries, devices=devices,
+                               keep_prob=1.0-FLAGS.dropout)
+    else:
+        qann = QAModel(FLAGS.size, FLAGS.batch_size, vocab_size, len(kb.answer_vocab), max_length,
+                       learning_rate=FLAGS.learning_rate, max_queries=FLAGS.num_queries, devices=devices,
+                       keep_prob=1.0-FLAGS.dropout)
 
-    print("Created model: " + m.name())
+    print("Created model: " + qann.name())
 
     best_path = []
     checkpoint_path = os.path.join(train_dir, "model.ckpt")
@@ -73,7 +79,7 @@ with tf.Session(config=config) as sess:
                          filter(lambda x: not x.endswith(".meta") and "ckpt" in x, os.listdir(train_dir))),
                      key=os.path.getctime)
         print("Loading from checkpoint " + newest)
-        m.saver.restore(sess, newest)
+        qann.saver.restore(sess, newest)
     else:
         if not os.path.exists(train_dir):
             os.makedirs(train_dir)
@@ -82,16 +88,26 @@ with tf.Session(config=config) as sess:
         if FLAGS.embeddings is not None:
             print("Init embeddings with %s..." % FLAGS.embeddings)
             e = embeddings.load_embedding(FLAGS.embeddings)
-            em = sess.run(m.input_embedding)
-            for j in range(vocab_size):
-                w = kb.vocab[j]
-                v = e.get(w)
-                if v is not None:
-                    em[j, :v.shape[0]] = v
-            sess.run(m.input_embedding.assign(em))
+            if isinstance(qann, EnsembleQAModel):
+                for m in qann.models:
+                    em = sess.run(m.input_embedding)
+                    for j in range(vocab_size):
+                        w = kb.vocab[j]
+                        v = e.get(w)
+                        if v is not None:
+                            em[j, :v.shape[0]] = v
+                    sess.run(m.input_embedding.assign(em))
+            else:
+                em = sess.run(qann.input_embedding)
+                for j in range(vocab_size):
+                    w = kb.vocab[j]
+                    v = e.get(w)
+                    if v is not None:
+                        em[j, :v.shape[0]] = v
+                sess.run(qann.input_embedding.assign(em))
 
     print("Consecutive support lookup: %d" % FLAGS.num_queries)
-    sess.run(m.num_queries.assign(FLAGS.num_queries))
+    qann.set_num_queries(sess, FLAGS.num_queries)
 
     num_params = functools.reduce(lambda acc, x: acc + x.size, sess.run(tf.trainable_variables()), 0)
     print("Num params: %d" % num_params)
@@ -101,24 +117,24 @@ with tf.Session(config=config) as sess:
     def validate():
         # Run evals on development set and print(their perplexity.)
         print("########## Validation ##############")
-        acc, mrr = eval.eval_dataset(sess, m, valid_sampler, True)
+        acc, mrr = eval.eval_dataset(sess, qann, valid_sampler, True)
         print("Accuracy: %.3f" % acc)
         print("MRR: %.3f" % mrr)
         print("####################################")
 
         if not best_path or acc > max(previous_accs):
             if best_path:
-                best_path[0] = m.saver.save(sess, checkpoint_path, global_step=m.global_step, write_meta_graph=False)
+                best_path[0] = qann.saver.save(sess, checkpoint_path, global_step=qann.global_step, write_meta_graph=False)
             else:
-                best_path.append(m.saver.save(sess, checkpoint_path, global_step=m.global_step, write_meta_graph=False))
+                best_path.append(qann.saver.save(sess, checkpoint_path, global_step=qann.global_step, write_meta_graph=False))
 
         if epoch >= 1 and acc <= previous_accs[-1] - 1e-3:  # if mrr is worse by a specific margin
             # if no significant improvement decay learningrate
             print("Decaying learningrate.")
-            sess.run(m.learning_rate.assign(m.learning_rate * FLAGS.learning_rate_decay))
+            qann.set_learning_rate(sess, qann.learning_rate(sess) * FLAGS.learning_rate_decay)
 
         previous_accs.append(acc)
-        m.set_train(sess)
+        qann.set_train(sess)
 
         return acc
 
@@ -127,7 +143,7 @@ with tf.Session(config=config) as sess:
     step_time = 0.0
     epoch_acc = 0.0
     i = 0
-    m.set_train(sess)
+    qann.set_train(sess)
     while FLAGS.max_iterations < 0 or i < FLAGS.max_iterations:
         i += 1
         start_time = time.time()
@@ -136,7 +152,7 @@ with tf.Session(config=config) as sess:
         if end_of_epoch:
             sampler.reset()
         # already fetch next batch parallel to running model
-        loss += m.step(sess, batch, "update")
+        loss += qann.step(sess, batch, "update")
         step_time += (time.time() - start_time)
 
         sys.stdout.write("\r%.1f%% Loss: %.3f" %
@@ -162,9 +178,9 @@ with tf.Session(config=config) as sess:
             # print(statistics for the previous epoch.)
             step_time /= FLAGS.ckpt_its
             print("global s"
-                  "tep %d learning rate %.5f, step-time %.3f, loss %.4f" % (m.global_step.eval(),
-                                                                                    m.learning_rate.eval(),
-                                                                                    step_time, loss))
+                  "tep %d learning rate %.5f, step-time %.3f, loss %.4f" % (qann.global_step.eval(),
+                                                                            qann._learning_rate.eval(),
+                                                                            step_time, loss))
             step_time, loss = 0.0, 0.0
             valid_loss = 0.0
 
@@ -172,10 +188,10 @@ with tf.Session(config=config) as sess:
 
     best_valid_acc = max(previous_accs) if previous_accs else 0.0
     print("Restore model to best on validation, with Accuracy: %.3f" % best_valid_acc)
-    m.saver.restore(sess, best_path[0])
+    qann.saver.restore(sess, best_path[0])
     model_name = best_path[0].split("/")[-1]
     print("########## Test ##############")
-    acc, mrr = eval.eval_dataset(sess, m, test_sampler, True)
+    acc, mrr = eval.eval_dataset(sess, qann, test_sampler, True)
     print("Accuracy: %.3f" % acc)
     print("MRR: %.3f" % mrr)
     print("##############################")

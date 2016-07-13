@@ -80,7 +80,7 @@ with tf.Session(config=config) as sess:
         sess.run(tf.initialize_all_variables())
 
     print("Consecutive support lookup: %d" % FLAGS.num_queries)
-    sess.run(m.num_queries.assign(FLAGS.num_queries))
+    sess.run(m._num_queries.assign(FLAGS.num_queries))
 
     num_params = functools.reduce(lambda acc, x: acc + x.size, sess.run(tf.trainable_variables()), 0)
     print("Num params: %d" % num_params)
@@ -127,7 +127,7 @@ with tf.Session(config=config) as sess:
         if epoch >= 1 and all(results[ds][-1] <= results[ds][-2] - 1e-3 for ds in valid_sets):
             # if results get worse by a specific margin  decay learningrate
             print("Decaying learningrate.")
-            sess.run(m.learning_rate.assign(m.learning_rate * FLAGS.learning_rate_decay))
+            sess.run(m._learning_rate.assign(m._learning_rate * FLAGS.learning_rate_decay))
 
 
     loss = 0.0
@@ -162,7 +162,7 @@ with tf.Session(config=config) as sess:
             # print(statistics for the previous epoch.)
             step_time /= FLAGS.ckpt_its
             print("global step %d learning rate %.5f, step-time %.3f, loss %.4f" % (m.global_step.eval(),
-                                                                                    m.learning_rate.eval(),
+                                                                                    m._learning_rate.eval(),
                                                                                     step_time, loss))
             step_time, loss = 0.0, 0.0
             valid_loss = 0.0
