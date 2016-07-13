@@ -534,8 +534,7 @@ class EnsembleQAModel:
                 self.models.append(QAModel(size, batch_size, vocab_size, answer_vocab_size, max_length, is_train,
                                            learning_rate, composition, max_queries, dvcs, keep_prob))
 
-        self.global_step = self.models[0].global_step + 1
-
+        self.global_step = self.models[0].global_step
         self.saver = tf.train.Saver(tf.all_variables(), max_to_keep=1)
 
     def name(self):

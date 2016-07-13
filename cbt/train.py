@@ -183,7 +183,7 @@ with tf.Session(config=config) as sess:
             step_time /= FLAGS.ckpt_its
             print("global s"
                   "tep %d learning rate %.5f, step-time %.3f, loss %.4f" % (qann.global_step.eval(),
-                                                                            qann._learning_rate.eval(),
+                                                                            qann.learning_rate(sess),
                                                                             step_time, loss))
             step_time, loss = 0.0, 0.0
             valid_loss = 0.0
