@@ -124,7 +124,7 @@ class QAModel:
             #use other device for backward rnn
             with vs.variable_scope("backward"):
                 min_end = tf.segment_min(self._ends, self._span_context)
-                init_state = tf.get_variable("init_state", [self._size], initializer=self._init)
+                init_state = tf.get_variable("init_state", [self._size], initializer=model.default_init())
                 init_state = tf.reshape(tf.tile(init_state, batch_size_32), [-1, self._size])
                 rev_embedded = tf.reverse_sequence(embedded, self._length, 0, 1)
                 # TIME-MAJOR: [T, B, S]
@@ -140,7 +140,7 @@ class QAModel:
             with vs.variable_scope("forward"):
                 #e_inputs = [tf.reshape(e, [-1, self._size]) for e in tf.split(1, self._max_length, embedded)]
                 max_start = tf.segment_max(self._starts, self._span_context)
-                init_state = tf.get_variable("init_state", [self._size], initializer=self._init)
+                init_state = tf.get_variable("init_state", [self._size], initializer=model.default_init())
                 init_state = tf.reshape(tf.tile(init_state, batch_size_32), [-1, self._size])
                 # TIME-MAJOR: [T, B, S]
                 outs_fw = self._composition_function(embedded, max_start, init_state)

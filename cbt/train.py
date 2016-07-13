@@ -23,7 +23,7 @@ tf.app.flags.DEFINE_string("composition", None, "'LSTM', 'GRU', 'RNN', 'BoW', 'B
 tf.app.flags.DEFINE_float("dropout", 0.0, "Dropout.")
 tf.app.flags.DEFINE_float("learning_rate", 1e-3, "Learning rate.")
 tf.app.flags.DEFINE_float("learning_rate_decay", 0.5, "Learning rate decay when loss on validation set does not improve.")
-tf.app.flags.DEFINE_float("num_models", 1, "Only train single model (1, default) or ensemble with >1 models.")
+tf.app.flags.DEFINE_integer("num_models", 1, "Only train single model (1, default) or ensemble with >1 models.")
 
 # training
 tf.app.flags.DEFINE_integer("batch_size", 25, "Number of examples in each batch for training.")

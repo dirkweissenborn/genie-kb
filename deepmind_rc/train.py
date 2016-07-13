@@ -23,7 +23,7 @@ tf.app.flags.DEFINE_float("learning_rate_decay", 0.5, "Learning rate decay when 
 tf.app.flags.DEFINE_integer("batch_size", 25, "Number of examples in each batch for training.")
 tf.app.flags.DEFINE_string("devices", "/cpu:0", "Use this device.")
 tf.app.flags.DEFINE_string("composition", None, "'LSTM', 'GRU', 'RNN', 'BoW', 'BiLSTM', 'BiGRU', 'BiRNN', 'Conv'")
-tf.app.flags.DEFINE_float("num_models", 1, "Only train single model (1, default) or ensemble with >1 models.")
+tf.app.flags.DEFINE_integer("num_models", 1, "Only train single model (1, default) or ensemble with >1 models.")
 
 #training
 tf.app.flags.DEFINE_integer("max_iterations", -1, "Maximum number of batches during training. -1 means until convergence")
