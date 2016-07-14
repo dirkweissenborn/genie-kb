@@ -163,11 +163,11 @@ with tf.Session(config=config) as sess:
 
         if end_of_epoch:
             print("")
-            accuracy = validate()
             epoch += 1
             print("Epoch %d done!" % epoch)
 
             if not is_ensemble or epoch % qann.num_models == 0:
+                accuracy = validate()
                 # an ensemble epoch scales with the number of models
                 if accuracy <= epoch_acc + 1e-4:
                     print("Stop learning!")
