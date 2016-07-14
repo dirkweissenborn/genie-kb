@@ -73,6 +73,7 @@ with tf.Session(config=config) as sess:
 
     previous_accs = list()
     epoch = 0
+    is_ensemble = isinstance(qann, EnsembleQAModel)
 
     if os.path.exists(train_dir) and any("ckpt" in x for x in os.listdir(train_dir)):
         newest = max(map(lambda x: os.path.join(train_dir, x),
@@ -88,7 +89,7 @@ with tf.Session(config=config) as sess:
         if FLAGS.embeddings is not None:
             print("Init embeddings with %s..." % FLAGS.embeddings)
             e = embeddings.load_embedding(FLAGS.embeddings)
-            if isinstance(qann, EnsembleQAModel):
+            if is_ensemble:
                 for m in qann.models:
                     em = sess.run(m.input_embedding)
                     for j in range(vocab_size):
@@ -165,11 +166,14 @@ with tf.Session(config=config) as sess:
             epoch += 1
             accuracy = validate()
             print("Epoch %d done!" % epoch)
-            if accuracy <= epoch_acc + 1e-4:
-                print("Stop learning!")
-                break
-            else:
-                epoch_acc = accuracy
+
+            if not is_ensemble or epoch % qann.num_models == 0:
+                # an ensemble epoch scales with the number of models
+                if accuracy <= epoch_acc + 1e-4:
+                    print("Stop learning!")
+                    break
+                else:
+                    epoch_acc = accuracy
 
         if i % FLAGS.ckpt_its == 0:
             loss /= FLAGS.ckpt_its

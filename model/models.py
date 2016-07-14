@@ -9,7 +9,7 @@ import tf_util
 import model
 from tensorflow.python.ops.rnn_cell import *
 from tensorflow.python.ops.rnn import dynamic_rnn
-import functools
+from multiprocessing import Pool
 from model.query import *
 
 
@@ -524,15 +524,17 @@ class QAModel:
 class EnsembleQAModel:
 
     def __init__(self, num_models, size, batch_size, vocab_size, answer_vocab_size, max_length, is_train=True, learning_rate=1e-2,
-                 composition="GRU", max_queries=0, devices=None, keep_prob=1.0):
+                 composition="GRU", max_queries=0, devices=["/cpu:0"], keep_prob=1.0):
+        self.num_models = num_models
         self.models = []
         self._is_train = is_train
-        self._next_to_update = 0
+        self._pool = Pool(num_models)
+
         for i in range(num_models):
             with tf.variable_scope("model_%d" % i, initializer=tf.contrib.layers.xavier_initializer()):
-                dvcs = devices[i % len(devices):(i % len(devices) + max(1, len(devices) // num_models))]
+                devices = devices.reverse()
                 self.models.append(QAModel(size, batch_size, vocab_size, answer_vocab_size, max_length, is_train,
-                                           learning_rate, composition, max_queries, dvcs, keep_prob))
+                                           learning_rate, composition, max_queries, devices, keep_prob))
 
         self.global_step = self.models[0].global_step
         self.saver = tf.train.Saver(tf.all_variables(), max_to_keep=1)
@@ -574,6 +576,7 @@ class EnsembleQAModel:
 
     def step(self, sess, queries, mode="update"):
         '''
+        queries are split equally among the models of this ensemble.
         :param sess:
         :param queries: batch of ContextQueries
         :param mode:
@@ -584,11 +587,15 @@ class EnsembleQAModel:
         if mode == "loss":
             for m in self.models:
                 l += m.run(sess, m._loss, queries)
-            return l
+            return l / self.num_models
         else:
-            m = self.models[self._next_to_update]
-            self._next_to_update = (self._next_to_update + 1) % len(self.models)
-            return m.step(sess, queries, "update")
+            batch_size = len(queries) // self.num_models
+
+            def update_model(i):
+                batch = queries[i*batch_size:(i+1)*batch_size]
+                return m.step(sess, queries[i*batch_size:(i+1)*batch_size], "update") * len(batch)
+
+            return sum(self._pool.map(update_model, range(self.num_models))) / len(queries)
 
 
 def test_model():
