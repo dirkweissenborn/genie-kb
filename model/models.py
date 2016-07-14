@@ -9,7 +9,7 @@ import tf_util
 import model
 from tensorflow.python.ops.rnn_cell import *
 from tensorflow.python.ops.rnn import dynamic_rnn
-from multiprocessing import Pool
+from multiprocessing.dummy import Pool
 from model.query import *
 import random
 
@@ -28,7 +28,6 @@ class QAModel:
         self._device0 = devices[0] if devices is not None else "/cpu:0"
         self._device1 = devices[1 % len(devices)] if devices is not None else "/cpu:0"
         self._device2 = devices[2 % len(devices)] if devices is not None else "/cpu:0"
-        self._device3 = devices[3 % len(devices)] if devices is not None else "/cpu:0"
         with tf.device(self._device0):
             with vs.variable_scope(self.name(), initializer=tf.contrib.layers.xavier_initializer()):
                 self._init_inputs()
@@ -593,7 +592,7 @@ class EnsembleQAModel:
 
             def update_model(i):
                 batch = queries[i*batch_size:(i+1)*batch_size]
-                return m.step(sess, queries[i*batch_size:(i+1)*batch_size], "update") * len(batch)
+                return self.models[i].step(sess, queries[i*batch_size:(i+1)*batch_size], "update") * len(batch)
 
             return sum(self._pool.map(update_model, range(self.num_models))) / len(queries)
 
