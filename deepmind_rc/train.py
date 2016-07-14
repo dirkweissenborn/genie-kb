@@ -163,8 +163,8 @@ with tf.Session(config=config) as sess:
 
         if end_of_epoch:
             print("")
-            epoch += 1
             accuracy = validate()
+            epoch += 1
             print("Epoch %d done!" % epoch)
 
             if not is_ensemble or epoch % qann.num_models == 0:
