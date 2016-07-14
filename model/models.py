@@ -11,7 +11,7 @@ from tensorflow.python.ops.rnn_cell import *
 from tensorflow.python.ops.rnn import dynamic_rnn
 from multiprocessing import Pool
 from model.query import *
-
+import random
 
 class QAModel:
 
@@ -532,7 +532,7 @@ class EnsembleQAModel:
 
         for i in range(num_models):
             with tf.variable_scope("model_%d" % i, initializer=tf.contrib.layers.xavier_initializer()):
-                devices = devices.reverse()
+                devices = devices[1:] + devices[0:1]
                 self.models.append(QAModel(size, batch_size, vocab_size, answer_vocab_size, max_length, is_train,
                                            learning_rate, composition, max_queries, devices, keep_prob))
 
