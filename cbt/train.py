@@ -133,7 +133,7 @@ with tf.Session(config=config) as sess:
             else:
                 best_path.append(qann.saver.save(sess, checkpoint_path, global_step=qann.global_step, write_meta_graph=False))
 
-        if epoch >= 1 and acc <= previous_accs[-1] - 1e-3:  # if mrr is worse by a specific margin
+        if epoch >= 1 and previous_accs and acc <= previous_accs[-1] - 1e-3:  # if mrr is worse by a specific margin
             # if no significant improvement decay learningrate
             print("Decaying learningrate.")
             qann.set_learning_rate(sess, qann.learning_rate(sess) * FLAGS.learning_rate_decay)
