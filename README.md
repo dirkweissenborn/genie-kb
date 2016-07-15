@@ -8,9 +8,6 @@ current version only [scoring models](model/models.py) for triples
 It also supports [compositional scoring models](model/comp_models.py)
 using various [composition functions](model/comp_functions.py).
 
-Note: If you use this code or parts of it, please do not forget to cite.
-Paper will be out soon.
-
 # Training and Supported Datasets
 
 Currently only the [FB15k-237](http://research.microsoft.com/en-us/downloads/3a9bf02d-b791-4e95-b88d-389feef3e421/) 
