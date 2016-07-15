@@ -1,5 +1,7 @@
 # General Information
 
+This repo is DEPRECATED and is not supported anymore.
+
 This repository contains implementations for a variety of AKBC 
 (Automatic Knowledge Base Completion) scoring models. In its 
 current version only [scoring models](model/models.py) for triples 
